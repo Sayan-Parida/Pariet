@@ -39,6 +39,12 @@ public class BrowserEvent {
     @Column(name = "referrer_url", length = 2048)
     private String referrerUrl;
 
+    @Column(name = "opener_tab_id")
+    private Integer openerTabId;
+
+    @Column(name = "source_tab_id")
+    private Integer sourceTabId;
+
     @Column(nullable = false)
     private Instant timestamp;
 
@@ -84,6 +90,12 @@ public class BrowserEvent {
     
     public String getReferrerUrl() { return referrerUrl; }
     public void setReferrerUrl(String referrerUrl) { this.referrerUrl = referrerUrl; }
+    
+    public Integer getOpenerTabId() { return openerTabId; }
+    public void setOpenerTabId(Integer openerTabId) { this.openerTabId = openerTabId; }
+    
+    public Integer getSourceTabId() { return sourceTabId; }
+    public void setSourceTabId(Integer sourceTabId) { this.sourceTabId = sourceTabId; }
     
     public Instant getTimestamp() { return timestamp; }
     public void setTimestamp(Instant timestamp) { this.timestamp = timestamp; }

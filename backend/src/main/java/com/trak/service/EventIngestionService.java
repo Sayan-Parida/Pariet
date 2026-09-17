@@ -82,6 +82,8 @@ public class EventIngestionService {
                 event.setWindowId(request.windowId());
                 event.setTransitionType(request.transitionType());
                 event.setReferrerUrl(request.referrerUrl());
+                event.setOpenerTabId(request.openerTabId());
+                event.setSourceTabId(request.sourceTabId());
                 event.setTimestamp(timestamp);
 
                 if (sessionId != null && PageVisitService.isResearchUrl(url)

@@ -126,7 +126,7 @@ class SessionControllerTest {
 
         eventIngestionService.ingestEvent(new com.trak.api.dto.BrowserEventRequest(
                 "NAVIGATION", "https://example.com/cascade", "Cascade Page",
-                1, 1, "link", "", Instant.now().toEpochMilli(), session.getId()));
+                1, 1, "link", null, "", null, null, Instant.now().toEpochMilli(), session.getId()));
 
         assertTrue(pageVisitRepository.findBySessionId(session.getId()).size() >= 1);
 
@@ -215,7 +215,7 @@ class SessionControllerTest {
         String pageUrl = "https://example.com/page1";
         String pageTitle = "Example Page 1";
         eventIngestionService.ingestEvent(new com.trak.api.dto.BrowserEventRequest(
-                "NAVIGATION", pageUrl, pageTitle, 1, 1, "link", "", Instant.now().toEpochMilli(), session.getId()));
+                "NAVIGATION", pageUrl, pageTitle, 1, 1, "link", null, "", null, null, Instant.now().toEpochMilli(), session.getId()));
 
         mockMvc.perform(get("/api/sessions/" + session.getId() + "/research-memory"))
                 .andExpect(status().isOk())
@@ -243,7 +243,7 @@ class SessionControllerTest {
         String searchUrl = "https://www.google.com/search?q=test+search+query";
         eventIngestionService.ingestEvent(new com.trak.api.dto.BrowserEventRequest(
                 "NAVIGATION", searchUrl, "test search query - Google Search",
-                1, 1, "link", "", Instant.now().toEpochMilli(), session.getId()));
+                1, 1, "link", null, "", null, null, Instant.now().toEpochMilli(), session.getId()));
 
         mockMvc.perform(get("/api/sessions/" + session.getId() + "/research-memory"))
                 .andExpect(status().isOk())

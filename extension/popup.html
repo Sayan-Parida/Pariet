@@ -5,178 +5,233 @@
   <title>Pariet</title>
   <style>
     :root {
-      --bg: #f8f9fa;
-      --surface: #ffffff;
-      --border: #e5e7eb;
-      --text: #111827;
-      --text-muted: #6b7280;
-      --accent: #2563eb;
-      --accent-hover: #1d4ed8;
-      --status-active: #059669;
-      --status-danger: #dc2626;
-      --status-danger-hover: #b91c1c;
+      --bg-app: #111111;
+      --surface-base: #181818;
+      --surface-elevated: #202020;
+      --border-medium: #4a4a48;
+      --border-strong: #e6e6e6;
+      --text-primary: #f5f5f0;
+      --text-muted: #a8a8a0;
+      --accent: #ff5ca8;
+      --accent-hover: #ff79bc;
+      --accent-subtle: #3c1a2c;
+      --status-active: #2fe0a0;
+      --status-active-subtle: #0f3326;
+      --status-danger: #ff5a6b;
+      --ink: #1a1a18;
+      --shadow-ink: rgba(0, 0, 0, 0.85);
+      --radius-xs: 1px;
+      --radius-sm: 2px;
     }
 
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #101216;
-        --surface: #16181d;
-        --border: #262a33;
-        --text: #f3f4f6;
-        --text-muted: #9ca3af;
-        --accent: #3b82f6;
-        --accent-hover: #60a5fa;
-        --status-active: #10b981;
-        --status-danger: #ef4444;
-        --status-danger-hover: #dc2626;
-      }
-    }
-
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
       width: 280px;
-      margin: 0;
       padding: 12px;
-      background-color: var(--bg);
-      color: var(--text);
+      background-color: var(--bg-app);
+      color: var(--text-primary);
       font-size: 12px;
       line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
       user-select: none;
     }
 
+    /* Header */
     .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
       padding-bottom: 8px;
-      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+      border-bottom: 2px solid var(--border-strong);
     }
 
     .brand {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
-      letter-spacing: -0.01em;
+      letter-spacing: 0.04em;
+      color: var(--text-primary);
     }
 
     .brand-mark {
-      width: 14px;
-      height: 14px;
+      width: 12px;
+      height: 12px;
       background: var(--accent);
-      border-radius: 3px;
+      border-radius: var(--radius-xs);
     }
 
-    .status-container {
+    .status {
       display: flex;
       align-items: center;
-      font-size: 10px;
-      font-family: monospace;
+      gap: 5px;
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
       color: var(--text-muted);
+      text-transform: uppercase;
     }
 
-    .status-dot {
+    .st-dot {
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      margin-right: 4px;
+      background: var(--text-muted);
     }
 
-    .connected { background-color: var(--status-active); }
-    .disconnected { background-color: var(--text-muted); }
+    .st-dot--on {
+      background: var(--status-active);
+      animation: blink 1s steps(2, start) infinite;
+    }
 
-    .section {
+    @keyframes blink {
+      50% { opacity: 0.15; }
+    }
+
+    /* Session card */
+    .card {
+      background: var(--surface-elevated);
+      border: 2px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      box-shadow: 4px 4px 0 var(--shadow-ink);
+      padding: 12px;
       margin-bottom: 10px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px;
     }
 
-    #session-label {
+    .label {
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
       font-size: 9px;
-      font-family: monospace;
       font-weight: 700;
       letter-spacing: 0.12em;
-      color: var(--status-active);
       text-transform: uppercase;
+      color: var(--text-muted);
       margin-bottom: 4px;
     }
 
-    #session-info {
-      font-size: 11px;
+    .label--accent {
+      color: var(--status-active);
+    }
+
+    .session-title {
+      font-size: 12px;
       font-weight: 600;
-      margin-bottom: 8px;
-      color: var(--text);
+      color: var(--text-primary);
+      line-height: 1.3;
+      margin-bottom: 4px;
     }
 
-    #capture-note {
-      font-size: 10px;
-      font-family: monospace;
+    .meta {
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .meta--warn {
+      color: var(--accent);
+    }
+
+    .meta--queue {
       color: var(--text-muted);
       margin-bottom: 8px;
-      display: none;
     }
 
-    #queue-info {
-      font-size: 10px;
-      font-family: monospace;
+    .meta--hidden { display: none; }
+
+    .hint {
+      font-size: 11px;
       color: var(--text-muted);
-      margin-bottom: 8px;
-      display: none;
+      line-height: 1.4;
+      margin-bottom: 10px;
     }
 
-    input[type="text"] {
+    /* Input */
+    .input {
       width: 100%;
       padding: 6px 8px;
       margin-bottom: 8px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      color: var(--text);
+      background: var(--surface-base);
+      border: 2px solid var(--border-medium);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
       font-size: 11px;
       outline: none;
     }
 
-    input[type="text"]:focus {
-      border-color: var(--accent);
+    .input::placeholder { color: var(--text-muted); }
+
+    .input:focus {
+      border-color: var(--border-strong);
+      box-shadow: 3px 3px 0 var(--shadow-ink);
     }
 
-    button {
+    /* Buttons */
+    .btn {
       width: 100%;
-      padding: 6px 10px;
-      border: none;
-      border-radius: 4px;
+      padding: 7px 10px;
+      border: 2px solid var(--border-strong);
+      border-radius: var(--radius-sm);
       cursor: pointer;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
       font-size: 11px;
       font-weight: 600;
-      transition: background 0.15s ease;
+      text-align: center;
+      transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s ease;
+      box-shadow: 3px 3px 0 var(--shadow-ink);
+      white-space: nowrap;
     }
 
-    .primary-btn {
-      background-color: var(--accent);
-      color: #ffffff;
+    .btn:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0 var(--shadow-ink);
     }
-    .primary-btn:hover { background-color: var(--accent-hover); }
 
-    .danger-btn {
-      background-color: var(--status-danger);
-      color: #ffffff;
+    .btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0 var(--shadow-ink);
     }
-    .danger-btn:hover { background-color: var(--status-danger-hover); }
 
-    .secondary-btn {
-      background-color: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
+    .btn--accent {
+      background: var(--accent);
+      color: var(--ink);
     }
-    .secondary-btn:hover {
-      background-color: var(--bg);
+
+    .btn--accent:hover { background: var(--accent-hover); }
+
+    .btn--danger {
+      background: var(--status-danger);
+      color: var(--ink);
     }
+
+    .btn--outline {
+      background: transparent;
+      color: var(--text-primary);
+    }
+
+    .btn--outline:hover { background: var(--surface-elevated); }
+
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: auto;
+      gap: 5px;
+    }
+
+    .action-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .action-row .action-btn { flex: 1; }
+
+    .hidden { display: none; }
   </style>
 </head>
 <body>
@@ -185,29 +240,38 @@
       <div class="brand-mark"></div>
       <span>Pariet</span>
     </div>
-    <div class="status-container">
-      <div id="status-indicator" class="status-dot disconnected"></div>
+    <div class="status">
+      <div id="status-indicator" class="st-dot"></div>
       <span id="status-text">Checking...</span>
     </div>
   </div>
 
-  <div class="section">
-    <div id="session-label"></div>
-    <div id="session-info">Loading...</div>
-    <div id="capture-note">Capturing research activity...</div>
-    <div id="queue-info"></div>
-
-    <div id="start-session-div" style="display: none;">
-      <input type="text" id="session-title" placeholder="Research topic (optional)">
-      <button id="start-btn" class="primary-btn">START RESEARCH</button>
-    </div>
-
-    <div id="end-session-div" style="display: none;">
-      <button id="end-btn" class="danger-btn">END SESSION</button>
+  <div id="no-session-section">
+    <div class="card">
+      <div class="label">No active research</div>
+      <div class="hint">Start a session to capture your research path: searches, pages visited, and navigation.</div>
+      <div id="start-session-div">
+        <input type="text" id="session-title" class="input" placeholder="Research topic (optional)">
+        <button id="start-btn" class="btn btn--accent">START RESEARCH</button>
+      </div>
     </div>
   </div>
 
-  <button id="dashboard-btn" class="secondary-btn">OPEN PARIET</button>
+  <div id="session-section" class="hidden">
+    <div class="card">
+      <div class="label label--accent" id="session-label">ACTIVE RESEARCH</div>
+      <div class="session-title" id="session-info">Loading...</div>
+      <div class="meta" id="capture-note">Capturing research activity...</div>
+      <div class="meta meta--hidden" id="queue-info"></div>
+      <div id="end-session-div">
+        <button id="end-btn" class="btn btn--danger">END SESSION</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="action-row">
+    <button id="dashboard-btn" class="btn btn--outline action-btn">OPEN PARIET</button>
+  </div>
 
   <script src="popup.js"></script>
 </body>

@@ -267,20 +267,100 @@ public class ResearchSessionService {
             }
         }
 
-        // RESULTS_IN edges using SearchQuery.pageVisitId as authoritative provenance.
-        // A SearchQuery is linked to the PageVisit created from the same ingestEvent()
-        // call that triggered search detection. Only that PageVisit becomes RESULTS_IN;
-        // no timestamp heuristic, no false connections from pre-search page visits.
+        // ── Search → result page provenance ────────────────────────────────────
+        //
+        // Strategy:
+        //   1. Original pageVisitId link: SEARCH → search results page (unchanged)
+        //   2. Same-tab link clicks: search results page tab → subsequent "link" navigations
+        //   3. New-tab results: search results page tab opened a new tab (openerTabId/sourceTabId)
+        //
+        // Only pages reachable via actual browser provenance (transitionType="link" or
+        // opener relationship) become RESULTS_IN. No timestamp heuristics.
+
+        // Map: tabId → list of NAVIGATION BrowserEvents in that tab (sorted by timestamp)
+        Map<Integer, List<BrowserEvent>> navByTab = events.stream()
+                .filter(e -> e.getEventType() == com.trak.domain.model.EventType.NAVIGATION)
+                .sorted(Comparator.comparing(BrowserEvent::getTimestamp))
+                .collect(Collectors.groupingBy(BrowserEvent::getTabId,
+                        LinkedHashMap::new, Collectors.toList()));
+
+        // Map: pageVisitId → PageVisit
+        Map<String, PageVisit> pvById = new HashMap<>();
+        for (PageVisit pv : pages) pvById.put(pv.getId(), pv);
+
+        // Map: BrowserEvent.pageVisitId → BrowserEvent (for finding which event = which page)
+        Map<String, BrowserEvent> eventByPvId = new HashMap<>();
+        for (BrowserEvent e : events) {
+            if (e.getPageVisitId() != null) {
+                eventByPvId.putIfAbsent(e.getPageVisitId(), e);
+            }
+        }
+
+        // Track which pages are already associated with a search to avoid duplicates
+        Set<String> associatedPages = new HashSet<>();
+
         for (SearchQuery sq : searches) {
+            // 1. Original pageVisitId link (search results page)
             if (sq.getPageVisitId() != null) {
-                Optional<PageVisit> matchingPage = pages.stream()
+                pages.stream()
                         .filter(pv -> pv.getId().equals(sq.getPageVisitId()))
-                        .findFirst();
-                matchingPage.ifPresent(pv -> {
-                    edges.add(new MindMapResponse.MindMapEdge(
-                            sq.getId(), pv.getId(), "RESULTS_IN", "Page visited after search in same ingestion event"
-                    ));
-                });
+                        .findFirst()
+                        .ifPresent(pv -> {
+                            edges.add(new MindMapResponse.MindMapEdge(
+                                    sq.getId(), pv.getId(), "RESULTS_IN",
+                                    "Search results page (same ingestion event)"));
+                            associatedPages.add(pv.getId());
+                        });
+            }
+
+            // Find the BrowserEvent for this search's results page
+            BrowserEvent searchEvent = eventByPvId.get(sq.getPageVisitId());
+            if (searchEvent == null) continue;
+            int searchTabId = searchEvent.getTabId();
+
+            // 2. Same-tab link clicks: find subsequent "link" navigations in the same tab
+            List<BrowserEvent> tabEvents = navByTab.getOrDefault(searchTabId, List.of());
+            boolean pastSearchPage = false;
+            for (BrowserEvent nav : tabEvents) {
+                if (nav.getTimestamp().compareTo(searchEvent.getTimestamp()) <= 0) {
+                    if (nav.getPageVisitId() != null && nav.getPageVisitId().equals(sq.getPageVisitId())) {
+                        pastSearchPage = true;
+                    }
+                    continue;
+                }
+                if (!pastSearchPage) continue;
+
+                // Only "link" transitions (user clicked a link on the previous page)
+                if (!"link".equals(nav.getTransitionType())) break;
+                if (nav.getPageVisitId() == null) continue;
+                if (associatedPages.contains(nav.getPageVisitId())) continue;
+
+                edges.add(new MindMapResponse.MindMapEdge(
+                        sq.getId(), nav.getPageVisitId(), "RESULTS_IN",
+                        "Result page opened via link click from search results"));
+                associatedPages.add(nav.getPageVisitId());
+            }
+
+            // 3. New-tab results: NAVIGATION events where openerTabId/sourceTabId = search tab
+            for (BrowserEvent nav : events) {
+                if (nav.getEventType() != com.trak.domain.model.EventType.NAVIGATION) continue;
+                if (nav.getPageVisitId() == null) continue;
+                if (associatedPages.contains(nav.getPageVisitId())) continue;
+
+                Integer sourceTab = nav.getSourceTabId();
+                Integer openerTab = nav.getOpenerTabId();
+                if (sourceTab == null && openerTab == null) continue;
+
+                int srcTab = sourceTab != null ? sourceTab : openerTab;
+                if (srcTab != searchTabId) continue;
+
+                // Must be a "link" transition (opened by clicking a link, not typed)
+                if (!"link".equals(nav.getTransitionType())) continue;
+
+                edges.add(new MindMapResponse.MindMapEdge(
+                        sq.getId(), nav.getPageVisitId(), "RESULTS_IN",
+                        "Result page opened in new tab from search results"));
+                associatedPages.add(nav.getPageVisitId());
             }
         }
 

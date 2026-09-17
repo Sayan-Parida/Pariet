@@ -66,7 +66,10 @@ class EventIngestionServiceTest {
                 1,
                 1,
                 "link",
+                null,
                 "",
+                null,
+                null,
                 Instant.now().toEpochMilli(),
                 sessionId
         );
@@ -96,6 +99,9 @@ class EventIngestionServiceTest {
             1,
             "typed",
             null,
+            null,
+            null,
+            null,
             Instant.now().toEpochMilli(),
             sessionId));
 
@@ -119,7 +125,10 @@ class EventIngestionServiceTest {
                 1,
                 1,
                 "typed",
+                null,
                 "",
+                null,
+                null,
                 timestamp,
                 sessionId
         );
@@ -142,7 +151,7 @@ class EventIngestionServiceTest {
                 "NAVIGATION", 
                 "https://www.google.com/search?q=java+garbage+collection",
                 "Java GC - Google Search",
-                1, 1, "link", "", timestamp1, sessionId);
+                1, 1, "link", null, "", null, null, timestamp1, sessionId);
         eventIngestionService.ingestEvent(req1);
         
         long timestamp2 = Instant.now().plusSeconds(30).toEpochMilli();
@@ -150,7 +159,7 @@ class EventIngestionServiceTest {
                 "NAVIGATION", 
                 "https://www.google.com/search?q=java+garbage+collection",
                 "Java GC - Google Search (second)",
-                1, 1, "link", "", timestamp2, sessionId);
+                1, 1, "link", null, "", null, null, timestamp2, sessionId);
         eventIngestionService.ingestEvent(req2);
         
         // When: both events are processed
@@ -167,7 +176,7 @@ class EventIngestionServiceTest {
             "TAB_ACTIVATED",
             "https://www.google.com/search?q=java+garbage+collection",
             "Java GC - Google Search",
-            1, 1, null, null, timestamp, sessionId);
+            1, 1, null, null, null, null, null, timestamp, sessionId);
 
         eventIngestionService.ingestEvent(activation);
 
@@ -181,7 +190,7 @@ class EventIngestionServiceTest {
             "NAVIGATION",
             "https://www.google.com/search?q=old+event",
             "Old event",
-            1, 1, "link", null,
+            1, 1, "link", null, null, null, null,
             Instant.now().minusSeconds(60).toEpochMilli(), sessionId);
 
         BrowserEvent saved = eventIngestionService.ingestEvent(oldEvent);
@@ -200,7 +209,7 @@ class EventIngestionServiceTest {
                 "NAVIGATION", 
                 "https://www.google.com/search?q=test+query",
                 "Test Search - Google",
-                1, 1, "link", "", timestamp, sessionId);
+                1, 1, "link", null, "", null, null, timestamp, sessionId);
         eventIngestionService.ingestEvent(req);
         
         // When: the exact same event (same tabId, url, timestamp) is replayed
@@ -220,7 +229,7 @@ class EventIngestionServiceTest {
         String searchUrl = "https://www.google.com/search?q=research+methodology";
         BrowserEventRequest searchReq = new BrowserEventRequest(
                 "NAVIGATION", searchUrl, "Research Methodology - Google Search",
-                1, 1, "link", "", Instant.now().toEpochMilli(), sessionId);
+                1, 1, "link", null, "", null, null, Instant.now().toEpochMilli(), sessionId);
         eventIngestionService.ingestEvent(searchReq);
         
         // Verify SearchQuery was created and has pageVisitId set
@@ -243,14 +252,14 @@ class EventIngestionServiceTest {
         String pageUrl = "https://example.com/pre-search-page";
         BrowserEventRequest pageReq = new BrowserEventRequest(
                 "NAVIGATION", pageUrl, "Pre-Search Page",
-                1, 1, "link", "", Instant.now().toEpochMilli(), sessionId);
+                1, 1, "link", null, "", null, null, Instant.now().toEpochMilli(), sessionId);
         eventIngestionService.ingestEvent(pageReq);
         
         // Then ingest a search event (different ingestion call, so pageVisitId won't link them)
         String searchUrl2 = "https://www.google.com/search?q=test+query";
         BrowserEventRequest searchReq = new BrowserEventRequest(
                 "NAVIGATION", searchUrl2, "Test Search - Google",
-                1, 1, "link", "", Instant.now().plusSeconds(1).toEpochMilli(), sessionId);
+                1, 1, "link", null, "", null, null, Instant.now().plusSeconds(1).toEpochMilli(), sessionId);
         eventIngestionService.ingestEvent(searchReq);
         
         // Then verify the research memory can be retrieved
@@ -270,14 +279,14 @@ class EventIngestionServiceTest {
         String searchUrl = "https://www.google.com/search?q=research+topic";
         BrowserEventRequest searchReq = new BrowserEventRequest(
                 "NAVIGATION", searchUrl, "Research Search - Google",
-                1, 1, "link", "", Instant.now().toEpochMilli(), sessionId);
+                1, 1, "link", null, "", null, null, Instant.now().toEpochMilli(), sessionId);
         eventIngestionService.ingestEvent(searchReq);
         
         // Then ingest a page visit in a different tab (tabId=2)
         String pageUrl = "https://example.com/unrelated-page";
         BrowserEventRequest pageReq = new BrowserEventRequest(
                 "NAVIGATION", pageUrl, "Unrelated Page - Tab 2",
-                2, 1, "link", "", Instant.now().plusSeconds(1).toEpochMilli(), sessionId);
+                2, 1, "link", null, "", null, null, Instant.now().plusSeconds(1).toEpochMilli(), sessionId);
         eventIngestionService.ingestEvent(pageReq);
         
         // Verify both events were captured

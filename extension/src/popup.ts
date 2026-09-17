@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const queueInfo = document.getElementById('queue-info');
   const startSessionDiv = document.getElementById('start-session-div');
   const endSessionDiv = document.getElementById('end-session-div');
+  const noSessionSection = document.getElementById('no-session-section');
+  const sessionSection = document.getElementById('session-section');
   const sessionTitleInput = document.getElementById('session-title') as HTMLInputElement;
   const startBtn = document.getElementById('start-btn');
   const endBtn = document.getElementById('end-btn');
@@ -17,27 +19,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function applyView(sessionState: SessionState | null, backendConnected: boolean, queueLength: number) {
     if (backendConnected) {
-      statusIndicator!.className = 'status-dot connected';
-      statusText!.textContent = 'PARIET ● CONNECTED';
+      statusIndicator!.className = 'st-dot st-dot--on';
+      statusText!.textContent = 'CONNECTED';
     } else {
-      statusIndicator!.className = 'status-dot disconnected';
-      statusText!.textContent = 'PARIET ● OFFLINE';
+      statusIndicator!.className = 'st-dot';
+      statusText!.textContent = 'OFFLINE';
     }
 
     if (queueLength > 0) {
       queueInfo!.textContent = `${queueLength} events queued`;
-      queueInfo!.style.display = 'block';
+      queueInfo!.classList.remove('meta--hidden');
     } else {
-      queueInfo!.style.display = 'none';
+      queueInfo!.classList.add('meta--hidden');
     }
 
     if (sessionState?.isActive && sessionState.sessionId) {
+      noSessionSection!.classList.add('hidden');
+      sessionSection!.classList.remove('hidden');
       sessionLabel!.textContent = 'ACTIVE RESEARCH';
       sessionInfo!.textContent = sessionState.sessionTitle || 'Untitled research session';
       captureNote!.style.display = 'block';
       startSessionDiv!.style.display = 'none';
       endSessionDiv!.style.display = 'block';
     } else {
+      noSessionSection!.classList.remove('hidden');
+      sessionSection!.classList.add('hidden');
       sessionLabel!.textContent = '';
       sessionInfo!.textContent = 'No active research session.';
       captureNote!.style.display = 'none';
@@ -46,9 +52,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Reconcile the extension's local session state against the authoritative
-  // backend: clear it if the active session is gone, adopt the ACTIVE session
-  // if we have none locally.
   async function reconcile(sessionState: SessionState | null): Promise<SessionState | null> {
     if (sessionState?.isActive && sessionState.sessionId) {
       const session = await api.getSession(sessionState.sessionId);
@@ -113,9 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.tabs.create({ url: 'http://localhost:5173' });
   });
 
-  // Initial update
   updateUI();
-
-  // Periodic refresh
   setInterval(updateUI, 5000);
 });

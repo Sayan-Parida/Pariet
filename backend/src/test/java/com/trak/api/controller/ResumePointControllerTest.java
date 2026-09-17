@@ -47,7 +47,7 @@ class ResumePointControllerTest {
 
     private void ingestNav(String sessionId, String url, String title, long timestamp) {
         eventIngestionService.ingestEvent(new BrowserEventRequest(
-                "NAVIGATION", url, title, 1, 1, "link", "", timestamp, sessionId));
+                "NAVIGATION", url, title, 1, 1, "link", null, "", null, null, timestamp, sessionId));
     }
 
     @Test

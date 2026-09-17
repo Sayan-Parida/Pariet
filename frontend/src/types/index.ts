@@ -7,6 +7,8 @@ export type NodeType =
   | 'DOMAIN'
   | 'AI_INSIGHT';
 
+export type VisibleNodeType = 'SESSION' | 'SEARCH' | 'SOURCE';
+
 export type RelationshipType = 
   | 'CITES' 
   | 'DERIVED_FROM' 
@@ -14,7 +16,14 @@ export type RelationshipType =
   | 'CONTRADICTS' 
   | 'EXPLORES' 
   | 'RELATED_TO' 
-  | 'SEARCH_TO_PAGE';
+  | 'SEARCH_TO_PAGE'
+  | 'PAGE_TO_PAGE'
+  | 'NAVIGATED_FROM';
+
+export type VisibleRelationshipType = 
+  | 'SESSION_TO_SEARCH' 
+  | 'SEARCH_TO_SOURCE' 
+  | 'SOURCE_TO_SOURCE';
 
 export type SessionStatus = 'ACTIVE' | 'COMPLETED' | 'ARCHIVED';
 
@@ -84,6 +93,7 @@ export interface MindMapNode {
   abstract?: string;
   authors?: string[];
   citationCount?: number;
+  visitCount?: number;
   relevanceScore?: number;
   insights?: string[];
   tags?: string[];
@@ -94,7 +104,7 @@ export interface MindMapEdge {
   id?: string;
   source: string;
   target: string;
-  relationship: RelationshipType;
+  relationship: RelationshipType | VisibleRelationshipType;
   description?: string;
   confidence?: number;
   animated?: boolean;
@@ -193,4 +203,30 @@ export interface ResearchSynthesisStep {
   title: string;
   description: string;
   status: 'pending' | 'running' | 'completed';
+}
+
+export interface ProjectedNode {
+  id: string;
+  type: VisibleNodeType;
+  label: string;
+  url?: string;
+  domain?: string;
+  timestamp?: string;
+  abstract?: string;
+  authors?: string[];
+  citationCount?: number;
+  visitCount?: number;
+  isStoppingPoint?: boolean;
+}
+
+export interface ProjectedEdge {
+  id: string;
+  source: string;
+  target: string;
+  relationship: VisibleRelationshipType;
+}
+
+export interface ProjectedGraph {
+  nodes: ProjectedNode[];
+  edges: ProjectedEdge[];
 }

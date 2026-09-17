@@ -14,35 +14,25 @@ export interface MapFilterState {
   sessions: boolean;
   searches: boolean;
   sources: boolean;
-  domains: boolean;
   researchConnections: boolean;
-  secondaryConnections: boolean;
+  navigationConnections: boolean;
 }
 
 export const DEFAULT_MAP_FILTER: MapFilterState = {
   sessions: true,
   searches: true,
   sources: true,
-  domains: false,
   researchConnections: true,
-  secondaryConnections: false
+  navigationConnections: false
 };
 
 export const PRIMARY_RELATIONSHIPS = new Set([
-  'CITES',
-  'DERIVED_FROM',
-  'SUPPORTS',
-  'CONTRADICTS',
-  'EXPLORES',
-  'RELATED_TO',
-  'SEARCH_TO_PAGE'
+  'SESSION_TO_SEARCH',
+  'SEARCH_TO_SOURCE'
 ]);
 
 export const SECONDARY_RELATIONSHIPS = new Set([
-  'SEARCH_TO_SEARCH',
-  'RESULTS_IN',
-  'PAGE_TO_PAGE',
-  'NAVIGATED_FROM'
+  'SOURCE_TO_SOURCE'
 ]);
 
 interface MapControlsProps {
@@ -61,16 +51,15 @@ interface MapControlsProps {
 
 type FilterKey = keyof MapFilterState;
 
-const NODE_FILTER_ROWS: Array<{ key: Exclude<FilterKey, 'researchConnections' | 'secondaryConnections'>; label: string; tone: string; muted?: boolean }> = [
-  { key: 'sessions', label: 'Research sessions', tone: 'var(--node-session)' },
+const NODE_FILTER_ROWS: Array<{ key: Exclude<FilterKey, 'researchConnections' | 'navigationConnections'>; label: string; tone: string }> = [
+  { key: 'sessions', label: 'Sessions', tone: 'var(--node-session)' },
   { key: 'searches', label: 'Searches', tone: 'var(--node-search)' },
-  { key: 'sources', label: 'Sources / Pages', tone: 'var(--node-page)' },
-  { key: 'domains', label: 'Domains', tone: 'var(--node-domain)', muted: true }
+  { key: 'sources', label: 'Sources', tone: 'var(--node-page)' }
 ];
 
-const CONNECTION_FILTER_ROWS: Array<{ key: 'researchConnections' | 'secondaryConnections'; label: string; hint: string; tone: string }> = [
-  { key: 'researchConnections', label: 'Main links', hint: 'how the research connects', tone: 'var(--node-paper)' },
-  { key: 'secondaryConnections', label: 'Related links', hint: 'extra activity links', tone: 'var(--node-concept)' }
+const CONNECTION_FILTER_ROWS: Array<{ key: 'researchConnections' | 'navigationConnections'; label: string; hint: string; tone: string }> = [
+  { key: 'researchConnections', label: 'Search → Source', hint: 'how searches lead to sources', tone: 'var(--node-search)' },
+  { key: 'navigationConnections', label: 'Source → Source', hint: 'navigation between sources', tone: 'var(--node-page)' }
 ];
 
 export const MapControls = ({
@@ -117,20 +106,18 @@ export const MapControls = ({
     filter.sessions !== DEFAULT_MAP_FILTER.sessions ||
     filter.searches !== DEFAULT_MAP_FILTER.searches ||
     filter.sources !== DEFAULT_MAP_FILTER.sources ||
-    filter.domains !== DEFAULT_MAP_FILTER.domains ||
     filter.researchConnections !== DEFAULT_MAP_FILTER.researchConnections ||
-    filter.secondaryConnections !== DEFAULT_MAP_FILTER.secondaryConnections;
+    filter.navigationConnections !== DEFAULT_MAP_FILTER.navigationConnections;
 
   const handleToggle = (key: FilterKey) => {
     onFilterChange({ ...filter, [key]: !filter[key] });
   };
 
-  const FilterRow = ({ label, hint, tone, checked, muted, onToggle }: {
+  const FilterRow = ({ label, hint, tone, checked, onToggle }: {
     label: string;
     hint?: string;
     tone: string;
     checked: boolean;
-    muted?: boolean;
     onToggle: () => void;
   }) => (
     <button
@@ -141,10 +128,10 @@ export const MapControls = ({
       <span className="flex items-center gap-2 min-w-0">
         <span
           className="w-2.5 h-2.5 shrink-0 border-2 border-[var(--border-strong)]"
-          style={{ backgroundColor: tone, opacity: muted ? 0.7 : 1 }}
+          style={{ backgroundColor: tone, opacity: 1 }}
         />
         <span className="flex flex-col min-w-0">
-          <span className={`text-[11px] font-semibold tracking-[0.01em] leading-none ${checked ? (muted ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]') : 'text-[var(--text-muted)]'}`}>
+          <span className={`text-[11px] font-semibold tracking-[0.01em] leading-none ${checked ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
             {label}
           </span>
           {hint && (
@@ -171,7 +158,6 @@ export const MapControls = ({
 
   return (
     <>
-      {/* Top Right: Canvas filters and export */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5">
         <div ref={filterRef} className="relative">
           <button
@@ -219,18 +205,9 @@ export const MapControls = ({
                   <div className="space-y-0.5">
                     {NODE_FILTER_ROWS.map((row) => (
                       <div key={row.key}>
-                        {row.muted && (
-                          <div className="mt-1.5 mb-1 flex items-center gap-2">
-                            <span className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--text-faint)]">
-                              Context
-                            </span>
-                            <span className="h-[2px] flex-1 bg-[var(--border-subtle)]" />
-                          </div>
-                        )}
                         <FilterRow
                           label={row.label}
                           tone={row.tone}
-                          muted={row.muted}
                           checked={filter[row.key]}
                           onToggle={() => handleToggle(row.key)}
                         />
@@ -273,7 +250,6 @@ export const MapControls = ({
         </button>
       </div>
 
-      {/* Bottom Left: Canvas Viewport Bar */}
       <div className="absolute bottom-4 left-4 z-10 flex items-center gap-0.5 p-1 border-2 border-[var(--border-strong)] rounded-[var(--radius-sm)] bg-[var(--surface-base)] box-shadow-[3px_3px_0_var(--shadow-ink)] select-none">
         <button
           onClick={onZoomOut}

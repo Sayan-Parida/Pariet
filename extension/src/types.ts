@@ -7,7 +7,10 @@ export interface BrowserEventRequest {
   tabId: number;
   windowId?: number;
   transitionType?: string;
+  transitionQualifiers?: string[];
   referrerUrl?: string;
+  openerTabId?: number;
+  sourceTabId?: number;
   timestamp: number;
   sessionId?: string;
 }

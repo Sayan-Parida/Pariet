@@ -1,15 +1,14 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   MiniMap,
   useNodesState,
   useEdgesState,
   useNodesInitialized,
   useReactFlow,
-  ReactFlowProvider,
   BaseEdge,
-  EdgeLabelRenderer,
   getSmoothStepPath,
   EdgeProps,
   Node,
@@ -18,11 +17,12 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { layoutResearchGraph, LAYOUT_NODE_WIDTH, LAYOUT_NODE_HEIGHT } from '../utils/graphLayout';
+import { buildResearchMapProjection, type ProjectedGraph } from '../utils/researchMapViewModel';
 import { apiClient } from '../api/client';
 import { researchStore } from '../api/researchStore';
 import { nodeTypes } from './CustomNodes';
 import NodeDetailPanel from './NodeDetailPanel';
-import { MapControls, MapFilterState, DEFAULT_MAP_FILTER, PRIMARY_RELATIONSHIPS, SECONDARY_RELATIONSHIPS } from './MapControls';
+import { MapControls, MapFilterState, DEFAULT_MAP_FILTER } from './MapControls';
 import { MindMapNode, MindMapEdge, NodeType, Session } from '../types';
 import { Loader2 } from 'lucide-react';
 
@@ -34,20 +34,6 @@ interface Props {
 }
 
 const positionsKey = (sessionId: string) => `researchmind:node-positions:${sessionId}`;
-const pathwayRelationships = new Set(['SEARCH_TO_SEARCH', 'RESULTS_IN', 'PAGE_TO_PAGE', 'NAVIGATED_FROM']);
-
-const edgePriority = (relationship: string) => {
-  if (relationship === 'SEARCH_TO_SEARCH' || relationship === 'RESULTS_IN') return 'anchor';
-  if (pathwayRelationships.has(relationship)) return 'movement';
-  return 'context';
-};
-
-const edgeLabelOffset = (relationship: string) => {
-  if (relationship === 'SEARCH_TO_SEARCH') return -18;
-  if (relationship === 'RESULTS_IN') return 16;
-  if (relationship === 'PAGE_TO_PAGE' || relationship === 'NAVIGATED_FROM') return 22;
-  return -22;
-};
 
 type SavedPositions = Record<string, { x: number; y: number }>;
 
@@ -73,11 +59,10 @@ function ResearchEdge({
   targetPosition,
   markerEnd,
   style,
-  label,
   selected,
   data
 }: EdgeProps) {
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
+  const [edgePath] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -89,46 +74,22 @@ function ResearchEdge({
   });
   const [hovered, setHovered] = useState(false);
   const priority = String(data?.priority || 'context');
-  const showLabel = priority === 'anchor' || hovered || selected;
-  const labelOffset = Number(data?.labelOffset || 0);
   const active = hovered || selected;
 
   return (
-    <>
-      <BaseEdge
-        path={edgePath}
-        markerEnd={markerEnd}
-        interactionWidth={28}
-        style={{
-          ...style,
-          stroke: active ? 'var(--accent)' : priority === 'anchor' ? 'var(--node-search)' : 'var(--border-strong)',
-          strokeWidth: active || priority === 'anchor' ? 1.8 : 1,
-          opacity: active ? 1 : priority === 'anchor' ? 0.84 : priority === 'movement' ? 0.55 : 0.24
-        }}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-      />
-      {label && showLabel && (
-        <EdgeLabelRenderer>
-          <div
-            className="pointer-events-auto absolute border-[1.5px] px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-[0.08em]"
-            style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + labelOffset}px)`,
-              color: 'var(--text-secondary)',
-              backgroundColor: 'var(--surface-base)',
-              borderColor: selected || hovered ? 'var(--accent)' : 'var(--border-medium)',
-              opacity: selected || hovered ? 1 : priority === 'anchor' ? 0.86 : 0.72,
-              boxShadow: 'var(--shadow-xs)',
-              zIndex: selected || hovered ? 3 : 1
-            }}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-          >
-            {String(label)}
-          </div>
-        </EdgeLabelRenderer>
-      )}
-    </>
+    <BaseEdge
+      path={edgePath}
+      markerEnd={markerEnd}
+      interactionWidth={28}
+      style={{
+        ...style,
+        stroke: active ? 'var(--accent)' : priority === 'anchor' ? 'var(--node-search)' : 'var(--border-strong)',
+        strokeWidth: active || priority === 'anchor' ? 1.8 : 1,
+        opacity: active ? 1 : priority === 'anchor' ? 0.84 : priority === 'movement' ? 0.55 : 0.24
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    />
   );
 }
 
@@ -139,7 +100,6 @@ function ViewportFitter({ nodeCount, disabled }: { nodeCount: number; disabled?:
   const nodesInitialized = useNodesInitialized();
 
   useEffect(() => {
-    // A pending focus owns the viewport: never auto-fit over it.
     if (disabled || !nodesInitialized || nodeCount === 0) return;
     const frame = requestAnimationFrame(() => {
       fitView({ padding: 0.05, duration: 300 });
@@ -157,7 +117,6 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeData, setSelectedNodeData] = useState<any | null>(null);
   const [filter, setFilter] = useState<MapFilterState>(DEFAULT_MAP_FILTER);
-  const layoutDirection: 'LR' | 'TB' = 'LR';
   const [showMinimap, setShowMinimap] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
 
@@ -167,93 +126,138 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
   const resettingLayoutRef = useRef(false);
   const rawDataRef = useRef<{ nodes: MindMapNode[]; edges: MindMapEdge[] }>({ nodes: [], edges: [] });
   const focusHandledRef = useRef<string | null>(null);
-  // A requested-but-unhandled focus owns the viewport: automatic fits must
-  // stay out of its way so VIEW PATH navigation is deterministic.
-  const focusPending = focusNodeId != null && focusHandledRef.current !== focusNodeId;
+  const layoutGenerationRef = useRef(0);
+  const loadInFlightRef = useRef(false);
+  const nodesRef = useRef<Node[]>([]);
+  const edgesRef = useRef<Edge[]>([]);
   const focusPendingRef = useRef(false);
-  focusPendingRef.current = focusPending;
+  const projectedDataRef = useRef<ProjectedGraph>({ nodes: [], edges: [] });
+  const currentLoadSessionRef = useRef<string | null>(null);
+  const loadTimingRef = useRef<{ t1: number; t2: number; t3: number; t4: number; t5: number; t6: number; t7: number; t8: number } | null>(null);
 
   const loadGraph = useCallback(async () => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
+    
+    const loadSessionId = sessionId;
+    const loadToken = ++layoutGenerationRef.current;
+    currentLoadSessionRef.current = loadSessionId;
+    
+    const t1 = performance.now();
+    loadTimingRef.current = { t1, t2: 0, t3: 0, t4: 0, t5: 0, t6: 0, t7: 0, t8: 0 };
+    
     try {
       setLoading(true);
-      const data = await apiClient.getMindMap(sessionId);
+      const t2 = performance.now();
+      loadTimingRef.current!.t2 = t2;
+      const data = await apiClient.getMindMap(loadSessionId);
+      const t3 = performance.now();
+      loadTimingRef.current!.t3 = t3;
+      
+      if (currentLoadSessionRef.current !== loadSessionId || loadToken !== layoutGenerationRef.current) {
+        return;
+      }
+      
       rawDataRef.current = { nodes: data.nodes, edges: data.edges };
-      const savedPositions = readSavedPositions(sessionId);
+      const savedPositions = readSavedPositions(loadSessionId);
       savedPositionsRef.current = savedPositions;
-      const domainNodeIds = new Set(
-        data.nodes.filter((node) => node.type === 'DOMAIN').map((node) => node.id)
-      );
 
-      const flowNodes: Node[] = data.nodes.map((n) => ({
+      const t4 = performance.now();
+      loadTimingRef.current!.t4 = t4;
+      const projected = buildResearchMapProjection(data.nodes, data.edges);
+      projectedDataRef.current = projected;
+      const t5 = performance.now();
+      loadTimingRef.current!.t5 = t5;
+
+      const flowNodes: Node[] = projected.nodes.map((n) => ({
         id: n.id,
         type: n.type,
-        hidden: n.type === 'DOMAIN',
         position: { x: 0, y: 0 },
         data: {
           ...n,
-          compact: data.nodes.length > 15 && n.type === 'PAGE',
-          isLatest: false,
+          compact: projected.nodes.length > 15 && n.type === 'SOURCE',
           isDimmed: false,
           isFocused: false
         }
       }));
 
-      const flowEdges: Edge[] = data.edges.map((e, index) => ({
-        id: `${e.id || `edge-${e.source}-${e.target}`}-${index}`,
-        source: e.source,
-        target: e.target,
-        label: e.relationship.replace(/_/g, ' ').toLowerCase(),
-        type: 'research',
-        data: {
-          priority: edgePriority(e.relationship),
-          relationship: e.relationship,
-          labelOffset: edgeLabelOffset(e.relationship)
-        },
-        hidden: domainNodeIds.has(e.source) || domainNodeIds.has(e.target),
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: 10,
-          height: 10,
-          color: 'var(--border-strong)'
-        }
-      }));
+      const flowEdges: Edge[] = projected.edges.map((e) => {
+        const priority = e.relationship === 'SESSION_TO_SEARCH' ? 'anchor' : 
+                         e.relationship === 'SEARCH_TO_SOURCE' ? 'movement' : 'context';
+        const labelOffset = e.relationship === 'SESSION_TO_SEARCH' ? -18 :
+                            e.relationship === 'SEARCH_TO_SOURCE' ? 16 : 22;
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          label: e.relationship.replace(/_/g, ' ').toLowerCase(),
+          type: 'research',
+          data: {
+            priority,
+            relationship: e.relationship,
+            labelOffset
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 10,
+            height: 10,
+            color: 'var(--border-strong)'
+          }
+        };
+      });
 
-      const latestNode = data.nodes
-        .filter((node) => node.type !== 'SESSION' && node.type !== 'DOMAIN' && node.timestamp)
-        .sort((left, right) => new Date(right.timestamp!).getTime() - new Date(left.timestamp!).getTime())[0];
-      if (latestNode) {
-        flowNodes.forEach((node) => {
-          node.data = { ...node.data, isLatest: node.id === latestNode.id };
-        });
+      const types: NodeTypeMap = {};
+      for (const n of flowNodes) types[n.id] = String(n.type ?? '');
+
+      const t6 = performance.now();
+      loadTimingRef.current!.t6 = t6;
+      const canonicalPositions = await layoutResearchGraph(
+        flowNodes.map((node) => node.id),
+        projected.edges,
+        'LR',
+        types,
+        projected.nodes.length > 15
+      );
+      const t7 = performance.now();
+      loadTimingRef.current!.t7 = t7;
+
+      if (currentLoadSessionRef.current !== loadSessionId || loadToken !== layoutGenerationRef.current) {
+        return;
       }
 
-      // ONE canonical layout: same function + same normalized inputs as Reset.
-      // Saved (user-dragged) positions still win when present; a fresh load
-      // with no saved positions always yields the canonical arrangement.
-      const canonicalPositions = layoutResearchGraph(
-        flowNodes.map((node) => node.id),
-        flowEdges.map((edge) => ({
-          source: edge.source,
-          target: edge.target,
-          relationship: String(edge.data?.relationship ?? '')
-        })),
-        layoutDirection
-      );
-      const layoutedEdges = flowEdges;
       const layoutedNodes = flowNodes.map((node) => ({
         ...node,
         position: savedPositions[node.id] || canonicalPositions[node.id] || node.position
       }));
 
       setNodes(layoutedNodes);
-      setEdges(layoutedEdges);
+      setEdges(flowEdges);
+      nodesRef.current = layoutedNodes;
+      edgesRef.current = flowEdges;
       setError(null);
+      
+      const t8 = performance.now();
+      loadTimingRef.current!.t8 = t8;
+      if (loadTimingRef.current) {
+        const t = loadTimingRef.current;
+        console.debug('[MindMap] Load timing:', {
+          sessionId: loadSessionId,
+          apiMs: Math.round(t.t3 - t.t2),
+          projectionMs: Math.round(t.t5 - t.t4),
+          layoutMs: Math.round(t.t7 - t.t6),
+          renderMs: Math.round(t.t8 - t.t7),
+          totalMs: Math.round(t.t8 - t.t1),
+          nodes: layoutedNodes.length,
+          edges: flowEdges.length
+        });
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to load research graph');
     } finally {
+      loadInFlightRef.current = false;
       setLoading(false);
     }
-  }, [sessionId, layoutDirection, setNodes, setEdges]);
+  }, [sessionId, setNodes, setEdges]);
 
   useEffect(() => {
     const container = mapContainerRef.current;
@@ -285,39 +289,45 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     return () => {
       unsubscribe();
     };
-  }, [loadGraph]);
+  }, [loadGraph, sessionId]);
 
   const handleViewportChange = useCallback(() => {
     const currentZoom = getZoom();
     if (currentZoom) setZoomLevel(currentZoom);
   }, [getZoom]);
 
-  const resetLayout = useCallback(() => {
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+  const resetLayout = useCallback(async () => {
     resettingLayoutRef.current = true;
     localStorage.removeItem(positionsKey(sessionId));
     savedPositionsRef.current = {};
-    // Recompute the canonical layout from the same normalized inputs the
-    // initial load uses — never from live visual positions, never a subset.
-    const canonicalPositions = layoutResearchGraph(
-      nodes.map((node) => node.id),
-      edges.map((edge) => ({
-        source: edge.source,
-        target: edge.target,
-        relationship: String(edge.data?.relationship ?? '')
-      })),
-      layoutDirection
+    const gen = ++layoutGenerationRef.current;
+    currentLoadSessionRef.current = sessionId;
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    const types: NodeTypeMap = {};
+    for (const n of currentNodes) types[n.id] = String(n.type ?? '');
+    const canonicalPositions = await layoutResearchGraph(
+      currentNodes.map((node) => node.id),
+      projectedDataRef.current.edges,
+      'LR',
+      types,
+      currentNodes.length > 15
     );
-    setNodes(nodes.map((node) => ({
+    if (currentLoadSessionRef.current !== sessionId || gen !== layoutGenerationRef.current) return;
+    setNodes(currentNodes.map((node) => ({
       ...node,
       position: canonicalPositions[node.id] || node.position
     })));
-    setEdges(edges);
+    setEdges(currentEdges);
     requestAnimationFrame(() => {
       localStorage.removeItem(positionsKey(sessionId));
       resettingLayoutRef.current = false;
       fitView({ padding: 0.05, duration: 250 });
     });
-  }, [sessionId, nodes, edges, layoutDirection, setNodes, setEdges, fitView]);
+  }, [sessionId, setNodes, setEdges, fitView]);
 
   const handleNodeDragStop = useCallback((_: MouseEvent | TouchEvent, node: Node) => {
     if (resettingLayoutRef.current) return;
@@ -329,7 +339,6 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     writeSavedPositions(sessionId, nextPositions);
   }, [sessionId]);
 
-  // Focus Mode
   const onNodeClick = useCallback((_: any, node: Node) => {
     setSelectedNodeData(node.data);
 
@@ -372,7 +381,6 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
   }, [setEdges, setNodes]);
 
-  // Keyboard: F = fit graph to screen
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -385,16 +393,13 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [fitView]);
 
-  // Node & connection visibility filtering
   useEffect(() => {
     const hiddenNodeIds = new Set<string>();
     const isTypeVisible = (type: string, f: MapFilterState): boolean => {
       switch (type) {
         case 'SESSION': return f.sessions;
         case 'SEARCH': return f.searches;
-        case 'PAGE':
-        case 'SOURCE_PAPER': return f.sources;
-        case 'DOMAIN': return f.domains;
+        case 'SOURCE': return f.sources;
         default: return true;
       }
     };
@@ -409,22 +414,20 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     setEdges((current) =>
       current.map((edge) => {
         const relationship = String(edge.data?.relationship || edge.label || '');
-        const relationshipVisible = PRIMARY_RELATIONSHIPS.has(relationship)
+        const relationshipVisible = (relationship === 'SESSION_TO_SEARCH' || relationship === 'SEARCH_TO_SOURCE')
           ? filter.researchConnections
-          : SECONDARY_RELATIONSHIPS.has(relationship)
-            ? filter.secondaryConnections
+          : relationship === 'SOURCE_TO_SOURCE'
+            ? filter.navigationConnections
             : true;
         const touchesHiddenNode = hiddenNodeIds.has(edge.source) || hiddenNodeIds.has(edge.target);
-        const isDomainEdge = edge.source.startsWith('domain:') || edge.target.startsWith('domain:');
         return {
           ...edge,
-          hidden: !relationshipVisible || touchesHiddenNode || (isDomainEdge && !filter.domains)
+          hidden: !relationshipVisible || touchesHiddenNode
         };
       })
     );
   }, [filter, setEdges, setNodes]);
 
-  // Connected nodes calculation
   const connectedNodesForSelected = useMemo(() => {
     if (!selectedNodeData) return [];
     const relations: Array<{ id: string; label: string; type: NodeType; relationship: string }> = [];
@@ -469,8 +472,6 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     }
   }, [nodes, setCenter]);
 
-  // Resume Research: focus a node (e.g. the session's stopping point) once the
-  // graph is loaded, highlighting it and its connected research path.
   useEffect(() => {
     if (!focusNodeId) return;
     if (focusHandledRef.current === focusNodeId) return;
@@ -537,8 +538,8 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
         <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-[var(--graph-bg)] select-none">
           <div className="b-panel px-6 py-5 max-w-sm flex flex-col gap-1.5">
             <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--text-faint)]">Empty canvas</span>
-            <span className="font-display text-sm font-bold text-[var(--text-primary)]">This session doesn&apos;t have enough research activity to build a map yet.</span>
-            <span className="text-[11px] font-mono text-[var(--text-muted)] leading-relaxed">Try running a deep research query or importing sources to populate the workspace.</span>
+            <span className="font-display text-sm font-bold text-[var(--text-primary)]">No research activity captured</span>
+            <span className="text-[11px] font-mono text-[var(--text-muted)] leading-relaxed">This session doesn&apos;t contain any captured research activity.</span>
           </div>
         </div>
       ) : (
@@ -563,7 +564,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
           fitViewOptions={{ padding: 0.05 }}
           proOptions={{ hideAttribution: true }}
         >
-          <ViewportFitter nodeCount={nodes.length} disabled={focusPending} />
+          <ViewportFitter nodeCount={nodes.length} disabled={focusPendingRef.current} />
           
           <Background 
             gap={20} 
@@ -588,12 +589,8 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
               nodeColor={(n) => {
                 switch (n.type) {
                   case 'SESSION': return 'var(--node-session)';
-                  case 'SOURCE_PAPER': return 'var(--node-paper)';
-                  case 'PAGE': return 'var(--node-page)';
-                  case 'CONCEPT': return 'var(--node-concept)';
                   case 'SEARCH': return 'var(--node-search)';
-                  case 'AI_INSIGHT': return 'var(--node-insight)';
-                  case 'DOMAIN': return 'var(--node-domain)';
+                  case 'SOURCE': return 'var(--node-page)';
                   default: return 'var(--text-muted)';
                 }
               }}
@@ -617,7 +614,6 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
         </ReactFlow>
       )}
 
-      {/* Floating Node Detail Inspector Drawer */}
       {selectedNodeData && (
         <NodeDetailPanel
           data={selectedNodeData}
@@ -641,3 +637,7 @@ export default function MindMap({ sessionId, session, focusNodeId, onFocusNodeCo
     </ReactFlowProvider>
   );
 }
+
+type NodeTypeMap = {
+  [nodeId: string]: string;
+};

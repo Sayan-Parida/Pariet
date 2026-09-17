@@ -6,7 +6,7 @@ const QUEUE_LIMIT = 1000;
 
 // Initialize state if missing
 async function initState() {
-  const data = await chrome.storage.local.get(['sessionState', 'eventQueue', 'backendStatus']);
+  const data = await chrome.storage.local.get(['sessionState', 'eventQueue', 'backendStatus', 'preExistingTabIds']);
   if (!data.sessionState) {
     await chrome.storage.local.set({ sessionState: { sessionId: null, sessionTitle: null, isActive: false } as SessionState });
   }
@@ -16,28 +16,51 @@ async function initState() {
   if (!data.backendStatus) {
     await chrome.storage.local.set({ backendStatus: { connected: false, lastCheck: Date.now() } as BackendStatus });
   }
+  if (!data.preExistingTabIds) {
+    await chrome.storage.local.set({ preExistingTabIds: [] as number[] });
+  }
 }
 
 initState();
 
 // Queue and processing
 async function processEvent(event: BrowserEventRequest) {
-  const data = await chrome.storage.local.get(['sessionState', 'eventQueue']);
+  const data = await chrome.storage.local.get(['sessionState', 'eventQueue', 'preExistingTabIds']);
   const sessionState: SessionState = data.sessionState;
+  const preExistingTabIds: number[] = data.preExistingTabIds || [];
+  
+  // Determine if this event should be attributed to the active session
+  let shouldAttributeSession = false;
   
   if (sessionState.isActive && sessionState.sessionId) {
+    const isPreExistingTab = preExistingTabIds.includes(event.tabId);
+    
+    if (!isPreExistingTab) {
+      // Tab was created after session started - attribute all events
+      shouldAttributeSession = true;
+    } else {
+      // Pre-existing tab: only attribute NAVIGATION events (actual research activity)
+      // Do NOT attribute TAB_ACTIVATED, TAB_CREATED, TAB_CLOSED for pre-existing tabs
+      if (event.eventType === 'NAVIGATION') {
+        shouldAttributeSession = true;
+        // Once a pre-existing tab has navigation, it becomes a session tab
+        // Remove from pre-existing list so future events are attributed
+        const updatedPreExisting = preExistingTabIds.filter(id => id !== event.tabId);
+        await chrome.storage.local.set({ preExistingTabIds: updatedPreExisting });
+      }
+    }
+  }
+  
+  if (shouldAttributeSession && sessionState.sessionId) {
     event.sessionId = sessionState.sessionId;
   }
-
+  
   const success = await api.sendEvent(event);
   
   if (success) {
-    // Update backend status
     await updateBackendStatus(true);
-    // Try to flush queue
     flushQueue();
   } else {
-    // Add to queue
     const queue: QueuedEvent[] = data.eventQueue || [];
     if (queue.length < QUEUE_LIMIT) {
       queue.push({ event, retryCount: 0 });
@@ -48,23 +71,42 @@ async function processEvent(event: BrowserEventRequest) {
 }
 
 async function flushQueue() {
-  const data = await chrome.storage.local.get(['eventQueue']);
+  const data = await chrome.storage.local.get(['eventQueue', 'sessionState', 'preExistingTabIds']);
   let queue: QueuedEvent[] = data.eventQueue || [];
+  const sessionState: SessionState = data.sessionState;
+  const preExistingTabIds: number[] = data.preExistingTabIds || [];
   
   if (queue.length === 0) return;
 
   const failedEvents: number[] = [];
 
-  // Try each queued event independently; don't block the rest on one failure
   for (let i = 0; i < queue.length; i++) {
-    const success = await api.sendEvent(queue[i].event);
+    const queuedEvent = queue[i].event;
+    let shouldAttributeSession = false;
+    
+    if (sessionState.isActive && sessionState.sessionId) {
+      const isPreExistingTab = preExistingTabIds.includes(queuedEvent.tabId);
+      
+      if (!isPreExistingTab) {
+        shouldAttributeSession = true;
+      } else if (queuedEvent.eventType === 'NAVIGATION') {
+        shouldAttributeSession = true;
+        const updatedPreExisting = preExistingTabIds.filter(id => id !== queuedEvent.tabId);
+        await chrome.storage.local.set({ preExistingTabIds: updatedPreExisting });
+      }
+    }
+    
+    if (shouldAttributeSession && sessionState.sessionId) {
+      queuedEvent.sessionId = sessionState.sessionId;
+    }
+    
+    const success = await api.sendEvent(queuedEvent);
     if (!success) {
       failedEvents.push(i);
     }
   }
 
   if (failedEvents.length < queue.length) {
-    // Keep only failed events; remove all successful ones
     queue = queue.filter((_, idx) => failedEvents.includes(idx));
     await chrome.storage.local.set({ eventQueue: queue });
   }
@@ -118,12 +160,13 @@ chrome.tabs.onCreated.addListener(async (tab) => {
     title: tab.title,
     tabId: tab.id!,
     windowId: tab.windowId,
+    openerTabId: tab.openerTabId,
     timestamp: Date.now()
   };
   await processEvent(event);
 });
 
-chrome.webNavigation.onCompleted.addListener(async (details) => {
+chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId !== 0) return; // Main frame only
   
   const url = details.url;
@@ -139,12 +182,38 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
       url: url,
       title: tab.title,
       tabId: details.tabId,
+      transitionType: details.transitionType,
+      transitionQualifiers: details.transitionQualifiers,
       timestamp: Date.now(),
-      // webNavigation.onCompleted doesn't give transitionType, but this is a rough approximation
     };
     await processEvent(event);
   } catch (e) {
     // Ignore if tab is already gone
+  }
+});
+
+// Track source tab for new-tab navigations (e.g., Ctrl+click → new tab)
+chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
+  if (details.tabId <= 0) return;
+  
+  const url = details.url;
+  if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) return;
+
+  try {
+    const tab = await chrome.tabs.get(details.tabId);
+    if (tab.incognito) return;
+    const event: BrowserEventRequest = {
+      eventType: 'TAB_CREATED',
+      url: url,
+      title: tab.title,
+      tabId: details.tabId,
+      windowId: tab.windowId,
+      sourceTabId: details.sourceTabId,
+      timestamp: Date.now()
+    };
+    await processEvent(event);
+  } catch {
+    // Ignore
   }
 });
 
@@ -199,7 +268,7 @@ async function restoreTabs(urls: string[], focusUrl: string | null): Promise<{ o
       await chrome.tabs.create({ url, active: url === focusUrl });
       count++;
     }
-    return { ok: true, count };
+    return { ok: true, count: count };
   } catch (error) {
     return { ok: false, count: 0, error: error instanceof Error ? error.message : 'Failed to restore tabs' };
   }
@@ -208,20 +277,31 @@ async function restoreTabs(urls: string[], focusUrl: string | null): Promise<{ o
 // Messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_STATE') {
-    chrome.storage.local.get(['sessionState', 'backendStatus', 'eventQueue']).then(data => {
+    chrome.storage.local.get(['sessionState', 'backendStatus', 'eventQueue', 'preExistingTabIds']).then(data => {
       sendResponse({
         sessionState: data.sessionState,
         backendStatus: data.backendStatus,
-        queueLength: (data.eventQueue || []).length
+        queueLength: (data.eventQueue || []).length,
+        preExistingTabCount: (data.preExistingTabIds || []).length
       });
     });
     return true; // keep channel open
   } else if (message.type === 'START_SESSION') {
     api.createSession(message.title).then(async (id) => {
       if (id) {
-        const sessionState: SessionState = { sessionId: id, sessionTitle: message.title, isActive: true };
-        await chrome.storage.local.set({ sessionState });
-        sendResponse({ success: true });
+        // Capture all currently open tabs as pre-existing (they should NOT be attributed to the new session
+        // unless the user actively navigates in them after session start)
+        const tabs = await chrome.tabs.query({});
+        const preExistingTabIds = tabs
+          .filter(tab => !tab.incognito)
+          .filter(tab => tab.url != null && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://') && !tab.url.startsWith('about:'))
+          .map(tab => tab.id!);
+        
+        await chrome.storage.local.set({ 
+          sessionState: { sessionId: id, sessionTitle: message.title, isActive: true } as SessionState,
+          preExistingTabIds
+        });
+        sendResponse({ success: true, preExistingTabCount: preExistingTabIds.length });
       } else {
         sendResponse({ success: false });
       }
@@ -233,7 +313,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (sessionId) {
         const success = await api.endSession(sessionId);
         if (success) {
-          await chrome.storage.local.set({ sessionState: { sessionId: null, sessionTitle: null, isActive: false } });
+          await chrome.storage.local.set({ 
+            sessionState: { sessionId: null, sessionTitle: null, isActive: false } as SessionState,
+            preExistingTabIds: []
+          });
         } else {
           console.error(`Failed to end session ${sessionId}; preserving local session state`);
         }
@@ -247,8 +330,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     restoreTabs(message.urls || [], message.focusUrl ?? null).then((response) => sendResponse(response));
     return true;
   } else if (message.type === 'CLEAR_SESSION_STATE') {
-    chrome.storage.local.set({ sessionState: { sessionId: null, sessionTitle: null, isActive: false } as SessionState })
-      .then(() => sendResponse({ success: true }));
+    chrome.storage.local.set({ 
+      sessionState: { sessionId: null, sessionTitle: null, isActive: false } as SessionState,
+      preExistingTabIds: []
+    }).then(() => sendResponse({ success: true }));
     return true;
   } else if (message.type === 'SET_SESSION_STATE') {
     chrome.storage.local.set({

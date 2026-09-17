@@ -101,7 +101,7 @@ export default function ResumePanel({ sessionId, onViewPath }: Props) {
   const restoring = status.kind === 'restoring';
 
   return (
-    <div className="b-panel w-[18rem] px-2.5 py-1.5 text-left min-h-[124px] flex flex-col">
+    <div className="b-panel w-[24rem] px-2.5 py-1.5 text-left min-h-[124px] flex flex-col">
       <div className="min-w-0">
         {page ? (
           <>
@@ -137,22 +137,22 @@ export default function ResumePanel({ sessionId, onViewPath }: Props) {
         <button
           onClick={handleRestore}
           disabled={!page || restoring || pagesReady === 0}
-          className="b-btn b-btn--accent flex-1 min-w-0 text-[9px] px-1.5 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="b-btn b-btn--accent shrink-0 text-[9px] px-1.5 py-1 disabled:cursor-not-allowed disabled:opacity-50"
           title="Open your research pages as tabs, and jump back to your stopping point"
         >
           <History className="w-3 h-3 shrink-0" />
-          <span className="truncate uppercase tracking-[0.08em]">
+          <span className="uppercase tracking-[0.08em]">
             {restoring ? 'Restoring…' : 'Restore research'}
           </span>
         </button>
         <button
           onClick={() => page && onViewPath(page.id)}
           disabled={!page}
-          className="b-btn flex-1 min-w-0 text-[9px] px-1.5 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="b-btn shrink-0 text-[9px] px-1.5 py-1 disabled:cursor-not-allowed disabled:opacity-50"
           title="Show this page on the Research Map"
         >
           <MapPinned className="w-3 h-3 shrink-0" />
-          <span className="truncate uppercase tracking-[0.08em]">View path</span>
+          <span className="uppercase tracking-[0.08em]">View path</span>
         </button>
       </div>
 
