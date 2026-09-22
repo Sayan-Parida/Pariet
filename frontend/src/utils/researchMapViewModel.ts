@@ -1,4 +1,4 @@
-import { MindMapNode, MindMapEdge, NodeType, RelationshipType } from '../types';
+import { MindMapNode, MindMapEdge, NodeType } from '../types';
 
 export interface ProjectedNode {
   id: string;
@@ -18,7 +18,7 @@ export interface ProjectedEdge {
   id: string;
   source: string;
   target: string;
-  relationship: 'SESSION_TO_SEARCH' | 'SEARCH_TO_SOURCE' | 'SOURCE_TO_SOURCE';
+  relationship: 'SEARCH_TO_SOURCE' | 'SOURCE_TO_SOURCE' | 'SEARCH_TO_SEARCH';
 }
 
 export interface ProjectedGraph {
@@ -27,7 +27,7 @@ export interface ProjectedGraph {
 }
 
 const SOURCE_TYPES: NodeType[] = ['PAGE', 'SOURCE_PAPER'];
-const NAVIGATION_RELATIONSHIPS: RelationshipType[] = ['PAGE_TO_PAGE', 'NAVIGATED_FROM'];
+const NAVIGATION_RELATIONSHIPS = ['PAGE_TO_PAGE', 'NAVIGATED_FROM'];
 
 const SEARCH_ENGINE_DOMAINS = [
   'google.com',
@@ -42,118 +42,110 @@ const SEARCH_ENGINE_DOMAINS = [
   'www.search.yahoo.com',
 ];
 
-function isSearchEngineResultsPage(node: MindMapNode): boolean {
-  if (!node.url) return false;
+const BROWSER_NOISE_PREFIXES = [
+  'chrome://',
+  'chrome-extension://',
+  'about:',
+  'edge://',
+  'brave://',
+];
+
+function isBrowserNoise(url: string | undefined): boolean {
+  if (!url) return true;
+  const lower = url.toLowerCase();
+  if (BROWSER_NOISE_PREFIXES.some(p => lower.startsWith(p))) return true;
+  if (lower === 'blank' || lower === 'about:blank') return true;
+  return false;
+}
+
+function isSearchEngineResultsPage(url: string | undefined): boolean {
+  if (!url) return false;
   try {
-    const url = new URL(node.url);
-    const hostname = url.hostname.toLowerCase();
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
     if (!SEARCH_ENGINE_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d))) {
       return false;
     }
-    const path = url.pathname.toLowerCase();
-    return path.includes('/search') || 
+    const path = parsed.pathname.toLowerCase();
+    return path.includes('/search') ||
            path.includes('/results') ||
-           url.searchParams.has('q') ||
-           url.searchParams.has('search_query') ||
-           url.searchParams.has('p');
+           parsed.searchParams.has('q') ||
+           parsed.searchParams.has('search_query') ||
+           parsed.searchParams.has('p');
   } catch {
     return false;
   }
 }
 
-function isSourceType(type: NodeType): boolean {
-  return SOURCE_TYPES.includes(type);
+function shouldIncludeSource(node: MindMapNode): boolean {
+  if (!SOURCE_TYPES.includes(node.type)) return false;
+  if (isBrowserNoise(node.url)) return false;
+  if (isSearchEngineResultsPage(node.url)) return false;
+  return true;
 }
 
-function isSearchType(type: NodeType): boolean {
-  return type === 'SEARCH';
-}
+function getStoppingPointId(nodes: ProjectedNode[]): string | null {
+  const sources = nodes.filter(n => n.type === 'SOURCE');
+  if (sources.length === 0) return null;
 
-function isSessionType(type: NodeType): boolean {
-  return type === 'SESSION';
-}
-
-function getStoppingPointId(nodes: MindMapNode[]): string | null {
-  const sourceNodes = nodes.filter(n => isSourceType(n.type) && !isSearchEngineResultsPage(n));
-  if (sourceNodes.length === 0) return null;
-
-  const withTimestamp = sourceNodes
-    .map(n => ({ node: n, time: n.timestamp ? new Date(n.timestamp).getTime() : 0 }))
+  const withTimestamp = sources
+    .map(n => ({ id: n.id, time: n.timestamp ? new Date(n.timestamp).getTime() : 0 }))
     .filter(x => x.time > 0)
     .sort((a, b) => b.time - a.time);
 
-  return withTimestamp[0]?.node.id ?? null;
+  return withTimestamp[0]?.id ?? null;
 }
 
-function buildSearchToSourceMap(
-  rawNodes: MindMapNode[],
-  rawEdges: MindMapEdge[]
-): Map<string, Set<string>> {
-  const searchToSources = new Map<string, Set<string>>();
-
-  for (const edge of rawEdges) {
-    const sourceNode = rawNodes.find(n => n.id === edge.source);
-    const targetNode = rawNodes.find(n => n.id === edge.target);
-    if (!sourceNode || !targetNode) continue;
-
-    if (isSearchType(sourceNode.type) && isSourceType(targetNode.type) && !isSearchEngineResultsPage(targetNode)) {
-      if (!searchToSources.has(sourceNode.id)) {
-        searchToSources.set(sourceNode.id, new Set());
-      }
-      searchToSources.get(sourceNode.id)!.add(targetNode.id);
-    }
-  }
-
-  return searchToSources;
-}
-
-function buildSourceToSourceMap(rawEdges: MindMapEdge[], validSourceIds: Set<string>): Map<string, Set<string>> {
-  const sourceToSource = new Map<string, Set<string>>();
-
-  for (const edge of rawEdges) {
-    const rel = edge.relationship as RelationshipType;
-    if (NAVIGATION_RELATIONSHIPS.includes(rel)) {
-      if (!validSourceIds.has(edge.source) || !validSourceIds.has(edge.target)) {
-        continue;
-      }
-      if (!sourceToSource.has(edge.source)) {
-        sourceToSource.set(edge.source, new Set());
-      }
-      sourceToSource.get(edge.source)!.add(edge.target);
-    }
-  }
-
-  return sourceToSource;
-}
-
-function findSessionNode(rawNodes: MindMapNode[]): MindMapNode | null {
-  return rawNodes.find(n => isSessionType(n.type)) ?? null;
-}
-
-function findSearchNodes(rawNodes: MindMapNode[]): MindMapNode[] {
-  return rawNodes.filter(n => isSearchType(n.type));
-}
-
-function findSourceNodes(rawNodes: MindMapNode[]): MindMapNode[] {
-  return rawNodes.filter(n => isSourceType(n.type) && !isSearchEngineResultsPage(n));
+function normalizedSearchLabel(label: string): string {
+  return label.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
 }
 
 export function buildResearchMapProjection(
   rawNodes: MindMapNode[],
   rawEdges: MindMapEdge[]
 ): ProjectedGraph {
-  const sessionNode = findSessionNode(rawNodes);
-  const searchNodes = findSearchNodes(rawNodes);
-  const sourceNodes = findSourceNodes(rawNodes);
+  const sessionNode = rawNodes.find(n => n.type === 'SESSION') ?? null;
+  const searchNodes = rawNodes.filter(n => n.type === 'SEARCH');
+  const sourceNodes = rawNodes.filter(n => shouldIncludeSource(n));
 
-  const stoppingPointId = getStoppingPointId(sourceNodes);
-  const searchToSources = buildSearchToSourceMap(rawNodes, rawEdges);
   const validSourceIds = new Set(sourceNodes.map(n => n.id));
-  const sourceToSource = buildSourceToSourceMap(rawEdges, validSourceIds);
+  const searchesByLabel = new Map<string, MindMapNode[]>();
+  for (const search of searchNodes) {
+    const key = normalizedSearchLabel(search.label);
+    const group = searchesByLabel.get(key) ?? [];
+    group.push(search);
+    searchesByLabel.set(key, group);
+  }
+  const canonicalSearchId = new Map<string, string>();
+  const visibleSearches: MindMapNode[] = [];
+  for (const group of searchesByLabel.values()) {
+    const canonical = [...group].sort((a, b) => a.id.localeCompare(b.id))[0];
+    visibleSearches.push(canonical);
+    for (const search of group) canonicalSearchId.set(search.id, canonical.id);
+  }
+  const validSearchIds = new Set(visibleSearches.map(n => n.id));
 
   const projectedNodes: ProjectedNode[] = [];
   const projectedEdges: ProjectedEdge[] = [];
   const edgeIdSet = new Set<string>();
+
+  const addEdge = (source: string, target: string, relationship: ProjectedEdge['relationship']) => {
+    const id = `${relationship}:${source}->${target}`;
+    if (edgeIdSet.has(id)) return;
+    if (relationship === 'SEARCH_TO_SEARCH') {
+      if (!validSearchIds.has(source) || !validSearchIds.has(target)) return;
+      if (source === target) return;
+      edgeIdSet.add(id);
+      projectedEdges.push({ id, source, target, relationship });
+      return;
+    }
+    if (!validSearchIds.has(source) && relationship === 'SEARCH_TO_SOURCE') return;
+    if (!validSourceIds.has(target) && relationship === 'SEARCH_TO_SOURCE') return;
+    if (!validSourceIds.has(source) && !validSearchIds.has(source)) return;
+    if (!validSourceIds.has(target)) return;
+    edgeIdSet.add(id);
+    projectedEdges.push({ id, source, target, relationship });
+  };
 
   if (sessionNode) {
     projectedNodes.push({
@@ -165,7 +157,7 @@ export function buildResearchMapProjection(
     });
   }
 
-  for (const search of searchNodes) {
+  for (const search of visibleSearches) {
     projectedNodes.push({
       id: search.id,
       type: 'SEARCH',
@@ -186,63 +178,48 @@ export function buildResearchMapProjection(
       abstract: source.abstract,
       authors: source.authors,
       citationCount: source.citationCount,
-      visitCount: source.visitCount,
-      isStoppingPoint: source.id === stoppingPointId
+      visitCount: source.visitCount
     });
   }
 
-  if (sessionNode) {
-    for (const search of searchNodes) {
-      const edgeId = `session-to-search-${sessionNode.id}-${search.id}`;
-      if (!edgeIdSet.has(edgeId)) {
-        edgeIdSet.add(edgeId);
-        projectedEdges.push({
-          id: edgeId,
-          source: sessionNode.id,
-          target: search.id,
-          relationship: 'SESSION_TO_SEARCH'
-        });
+  for (const edge of rawEdges) {
+    const rel = edge.relationship;
+
+    if (rel === 'RESULTS_IN') {
+      const canonicalSource = canonicalSearchId.get(edge.source);
+      if (canonicalSource) addEdge(canonicalSource, edge.target, 'SEARCH_TO_SOURCE');
+    }
+
+    if (NAVIGATION_RELATIONSHIPS.includes(rel)) {
+      if (validSourceIds.has(edge.source) && validSourceIds.has(edge.target)) {
+        addEdge(edge.source, edge.target, 'SOURCE_TO_SOURCE');
       }
     }
-  }
 
-  for (const [searchId, sourceIds] of searchToSources) {
-    for (const sourceId of sourceIds) {
-      const edgeId = `search-to-source-${searchId}-${sourceId}`;
-      if (!edgeIdSet.has(edgeId)) {
-        edgeIdSet.add(edgeId);
-        projectedEdges.push({
-          id: edgeId,
-          source: searchId,
-          target: sourceId,
-          relationship: 'SEARCH_TO_SOURCE'
-        });
+    if (rel === 'SEARCH_TO_SEARCH') {
+      const canonicalSource = canonicalSearchId.get(edge.source);
+      const canonicalTarget = canonicalSearchId.get(edge.target);
+      if (canonicalSource && canonicalTarget) {
+        addEdge(canonicalSource, canonicalTarget, 'SEARCH_TO_SEARCH');
       }
     }
+
   }
 
-  for (const [sourceId, targetIds] of sourceToSource) {
-    for (const targetId of targetIds) {
-      const edgeId = `source-to-source-${sourceId}-${targetId}`;
-      if (!edgeIdSet.has(edgeId)) {
-        edgeIdSet.add(edgeId);
-        projectedEdges.push({
-          id: edgeId,
-          source: sourceId,
-          target: targetId,
-          relationship: 'SOURCE_TO_SOURCE'
-        });
-      }
-    }
+  const stoppingPointId = getStoppingPointId(projectedNodes);
+  if (stoppingPointId) {
+    const node = projectedNodes.find(n => n.id === stoppingPointId);
+    if (node) node.isStoppingPoint = true;
   }
 
-  return { nodes: projectedNodes, edges: projectedEdges };
-}
+  const connectedIds = new Set<string>();
+  for (const e of projectedEdges) {
+    connectedIds.add(e.source);
+    connectedIds.add(e.target);
+  }
 
-export function getNodeTypeForLayout(node: ProjectedNode): string {
-  return node.type;
-}
-
-export function getEdgeRelationship(edge: ProjectedEdge): string {
-  return edge.relationship;
+  return {
+    nodes: projectedNodes.filter(n => n.type === 'SESSION' || connectedIds.has(n.id)),
+    edges: projectedEdges
+  };
 }
