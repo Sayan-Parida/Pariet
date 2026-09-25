@@ -18,7 +18,9 @@ export type RelationshipType =
   | 'RELATED_TO' 
   | 'SEARCH_TO_PAGE'
   | 'PAGE_TO_PAGE'
-  | 'NAVIGATED_FROM';
+  | 'NAVIGATED_FROM'
+  | 'RESULTS_IN'
+  | 'SEARCH_TO_SEARCH';
 
 export type VisibleRelationshipType = 
   | 'SESSION_TO_SEARCH' 

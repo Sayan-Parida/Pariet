@@ -287,6 +287,7 @@ export default function SessionList({
       >
         <span className="uppercase tracking-[0.14em]">Pariet / Local</span>
         <button
+          aria-label="Reset"
           onClick={() => {
             if (window.confirm('Reset sample research graphs?')) {
               researchStore.resetToDefault();
@@ -294,7 +295,6 @@ export default function SessionList({
           }}
           className="uppercase tracking-[0.1em] border border-[var(--surface-base)] px-1.5 py-px hover:bg-[var(--surface-base)] hover:text-[var(--border-strong)] transition-colors"
         >
-          Reset
         </button>
       </div>
     </aside>

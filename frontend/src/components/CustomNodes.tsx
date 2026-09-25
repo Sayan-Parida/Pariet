@@ -73,6 +73,7 @@ const NodeWrapper = memo(({
       }}
     >
       <Handle 
+        id="tgt-left"
         type="target" 
         position={Position.Left} 
         style={{
@@ -80,10 +81,13 @@ const NodeWrapper = memo(({
           height: 5,
           background: 'var(--border-strong)',
           border: 'none',
-          left: -3
+          left: -3,
+          opacity: 1,
+          cursor: 'default'
         }} 
       />
       <Handle 
+        id="src-right"
         type="source" 
         position={Position.Right} 
         style={{
@@ -91,10 +95,13 @@ const NodeWrapper = memo(({
           height: 5,
           background: 'var(--border-strong)',
           border: 'none',
-          right: -3
+          right: -3,
+          opacity: 1,
+          cursor: 'default'
         }} 
       />
       <Handle 
+        id="tgt-top"
         type="target" 
         position={Position.Top} 
         style={{
@@ -102,10 +109,13 @@ const NodeWrapper = memo(({
           height: 5,
           background: 'var(--border-strong)',
           border: 'none',
-          top: -3
+          top: -3,
+          opacity: 1,
+          cursor: 'default'
         }} 
       />
       <Handle 
+        id="src-bottom"
         type="source" 
         position={Position.Bottom} 
         style={{
@@ -113,7 +123,9 @@ const NodeWrapper = memo(({
           height: 5,
           background: 'var(--border-strong)',
           border: 'none',
-          bottom: -3
+          bottom: -3,
+          opacity: 1,
+          cursor: 'default'
         }} 
       />
 

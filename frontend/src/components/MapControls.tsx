@@ -15,7 +15,7 @@ export interface MapFilterState {
   searches: boolean;
   sources: boolean;
   researchConnections: boolean;
-  navigationConnections: boolean;
+  searchConnections: boolean;
 }
 
 export const DEFAULT_MAP_FILTER: MapFilterState = {
@@ -23,16 +23,12 @@ export const DEFAULT_MAP_FILTER: MapFilterState = {
   searches: true,
   sources: true,
   researchConnections: true,
-  navigationConnections: false
+  searchConnections: true
 };
 
 export const PRIMARY_RELATIONSHIPS = new Set([
-  'SESSION_TO_SEARCH',
-  'SEARCH_TO_SOURCE'
-]);
-
-export const SECONDARY_RELATIONSHIPS = new Set([
-  'SOURCE_TO_SOURCE'
+  'SEARCH_TO_SOURCE',
+  'SEARCH_TO_SEARCH'
 ]);
 
 interface MapControlsProps {
@@ -51,15 +47,15 @@ interface MapControlsProps {
 
 type FilterKey = keyof MapFilterState;
 
-const NODE_FILTER_ROWS: Array<{ key: Exclude<FilterKey, 'researchConnections' | 'navigationConnections'>; label: string; tone: string }> = [
+const NODE_FILTER_ROWS: Array<{ key: Exclude<FilterKey, 'researchConnections' | 'searchConnections'>; label: string; tone: string }> = [
   { key: 'sessions', label: 'Sessions', tone: 'var(--node-session)' },
   { key: 'searches', label: 'Searches', tone: 'var(--node-search)' },
   { key: 'sources', label: 'Sources', tone: 'var(--node-page)' }
 ];
 
-const CONNECTION_FILTER_ROWS: Array<{ key: 'researchConnections' | 'navigationConnections'; label: string; hint: string; tone: string }> = [
+const CONNECTION_FILTER_ROWS: Array<{ key: 'researchConnections' | 'searchConnections'; label: string; hint: string; tone: string }> = [
   { key: 'researchConnections', label: 'Search → Source', hint: 'how searches lead to sources', tone: 'var(--node-search)' },
-  { key: 'navigationConnections', label: 'Source → Source', hint: 'navigation between sources', tone: 'var(--node-page)' }
+  { key: 'searchConnections', label: 'Search → Search', hint: 'related search queries', tone: 'var(--node-search)' }
 ];
 
 export const MapControls = ({
@@ -107,7 +103,7 @@ export const MapControls = ({
     filter.searches !== DEFAULT_MAP_FILTER.searches ||
     filter.sources !== DEFAULT_MAP_FILTER.sources ||
     filter.researchConnections !== DEFAULT_MAP_FILTER.researchConnections ||
-    filter.navigationConnections !== DEFAULT_MAP_FILTER.navigationConnections;
+    filter.searchConnections !== DEFAULT_MAP_FILTER.searchConnections;
 
   const handleToggle = (key: FilterKey) => {
     onFilterChange({ ...filter, [key]: !filter[key] });

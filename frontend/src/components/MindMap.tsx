@@ -9,7 +9,7 @@ import {
   useNodesInitialized,
   useReactFlow,
   BaseEdge,
-  getSmoothStepPath,
+  getBezierPath,
   EdgeProps,
   Node,
   Edge,
@@ -17,7 +17,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { layoutResearchGraph, LAYOUT_NODE_WIDTH, LAYOUT_NODE_HEIGHT } from '../utils/graphLayout';
-import { buildResearchMapProjection, type ProjectedGraph } from '../utils/researchMapViewModel';
+import { buildResearchMapProjection } from '../utils/researchMapViewModel';
 import { apiClient } from '../api/client';
 import { researchStore } from '../api/researchStore';
 import { nodeTypes } from './CustomNodes';
@@ -62,19 +62,23 @@ function ResearchEdge({
   selected,
   data
 }: EdgeProps) {
-  const [edgePath] = getSmoothStepPath({
+  const [hovered, setHovered] = useState(false);
+  const priority = String(data?.priority || 'context');
+  const active = hovered || selected;
+  const [edgePath] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
     targetX,
     targetY,
     targetPosition,
-    borderRadius: 10,
-    offset: 24
+    curvature: priority === 'anchor' ? 0.3 : priority === 'link' ? 0.45 : 0.4
   });
-  const [hovered, setHovered] = useState(false);
-  const priority = String(data?.priority || 'context');
-  const active = hovered || selected;
+
+  const stroke = active ? 'var(--accent)' : priority === 'link' ? '#FF7A3D' : priority === 'movement' ? '#72E6C1' : 'var(--border-strong)';
+  const strokeWidth = active ? 2.6 : priority === 'anchor' ? 2.4 : priority === 'link' ? 1.8 : 1.6;
+  const opacity = active ? 1 : priority === 'anchor' ? 1 : priority === 'link' ? 0.8 : 0.65;
+  const strokeDasharray = priority === 'anchor' ? 'none' : priority === 'link' ? '5 4' : '6 5';
 
   return (
     <BaseEdge
@@ -83,9 +87,10 @@ function ResearchEdge({
       interactionWidth={28}
       style={{
         ...style,
-        stroke: active ? 'var(--accent)' : priority === 'anchor' ? 'var(--node-search)' : 'var(--border-strong)',
-        strokeWidth: active || priority === 'anchor' ? 1.8 : 1,
-        opacity: active ? 1 : priority === 'anchor' ? 0.84 : priority === 'movement' ? 0.55 : 0.24
+        stroke,
+        strokeWidth,
+        opacity,
+        strokeDasharray
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -102,7 +107,7 @@ function ViewportFitter({ nodeCount, disabled }: { nodeCount: number; disabled?:
   useEffect(() => {
     if (disabled || !nodesInitialized || nodeCount === 0) return;
     const frame = requestAnimationFrame(() => {
-      fitView({ padding: 0.05, duration: 300 });
+      fitView({ padding: 0.12, duration: 300, maxZoom: 1.4 });
     });
     return () => cancelAnimationFrame(frame);
   }, [nodeCount, nodesInitialized, fitView, disabled]);
@@ -123,15 +128,12 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
   const { fitView, zoomIn, zoomOut, setCenter, getZoom } = useReactFlow();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const savedPositionsRef = useRef<SavedPositions>({});
-  const resettingLayoutRef = useRef(false);
   const rawDataRef = useRef<{ nodes: MindMapNode[]; edges: MindMapEdge[] }>({ nodes: [], edges: [] });
   const focusHandledRef = useRef<string | null>(null);
   const layoutGenerationRef = useRef(0);
   const loadInFlightRef = useRef(false);
   const nodesRef = useRef<Node[]>([]);
-  const edgesRef = useRef<Edge[]>([]);
   const focusPendingRef = useRef(false);
-  const projectedDataRef = useRef<ProjectedGraph>({ nodes: [], edges: [] });
   const currentLoadSessionRef = useRef<string | null>(null);
   const loadTimingRef = useRef<{ t1: number; t2: number; t3: number; t4: number; t5: number; t6: number; t7: number; t8: number } | null>(null);
 
@@ -165,7 +167,6 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
       const t4 = performance.now();
       loadTimingRef.current!.t4 = t4;
       const projected = buildResearchMapProjection(data.nodes, data.edges);
-      projectedDataRef.current = projected;
       const t5 = performance.now();
       loadTimingRef.current!.t5 = t5;
 
@@ -182,29 +183,27 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
       }));
 
       const flowEdges: Edge[] = projected.edges.map((e) => {
-        const priority = e.relationship === 'SESSION_TO_SEARCH' ? 'anchor' : 
-                         e.relationship === 'SEARCH_TO_SOURCE' ? 'movement' : 'context';
-        const labelOffset = e.relationship === 'SESSION_TO_SEARCH' ? -18 :
-                            e.relationship === 'SEARCH_TO_SOURCE' ? 16 : 22;
-        return {
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          label: e.relationship.replace(/_/g, ' ').toLowerCase(),
-          type: 'research',
-          data: {
-            priority,
-            relationship: e.relationship,
-            labelOffset
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 10,
-            height: 10,
-            color: 'var(--border-strong)'
-          }
-        };
-      });
+          const priority = e.relationship === 'SEARCH_TO_SOURCE' ? 'anchor'
+            : e.relationship === 'SEARCH_TO_SEARCH' ? 'link'
+            : 'movement';
+          return {
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            label: '',
+            type: 'research',
+            data: {
+              priority,
+              relationship: e.relationship
+            },
+            markerEnd: priority === 'anchor' ? {
+              type: MarkerType.ArrowClosed,
+              width: 10,
+              height: 10,
+              color: 'var(--border-strong)'
+            } : undefined
+          };
+        });
 
       const types: NodeTypeMap = {};
       for (const n of flowNodes) types[n.id] = String(n.type ?? '');
@@ -225,16 +224,42 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
         return;
       }
 
-      const layoutedNodes = flowNodes.map((node) => ({
-        ...node,
-        position: savedPositions[node.id] || canonicalPositions[node.id] || node.position
-      }));
+      for (const edge of flowEdges) {
+        const s = canonicalPositions[edge.source];
+        const t = canonicalPositions[edge.target];
+        if (!s || !t) continue;
+        const dx = t.x - s.x;
+        const dy = t.y - s.y;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          edge.sourceHandle = dx >= 0 ? 'src-right' : 'src-left';
+          edge.targetHandle = dx >= 0 ? 'tgt-left' : 'tgt-right';
+        } else {
+          edge.sourceHandle = dy >= 0 ? 'src-bottom' : 'src-top';
+          edge.targetHandle = dy >= 0 ? 'tgt-top' : 'tgt-bottom';
+        }
+      }
+
+      let savedHits = 0;
+      const layoutedNodes = flowNodes.map((node) => {
+        if (savedPositions[node.id]) savedHits++;
+        return {
+          ...node,
+          position: savedPositions[node.id] || canonicalPositions[node.id] || node.position
+        };
+      });
 
       setNodes(layoutedNodes);
       setEdges(flowEdges);
       nodesRef.current = layoutedNodes;
-      edgesRef.current = flowEdges;
       setError(null);
+
+      console.debug(
+        '[MindMap] DISPLAY SIGNATURE',
+        [...layoutedNodes]
+          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+          .map((n) => `${n.id}:${n.position.x},${n.position.y}`)
+          .join('|')
+      );
       
       const t8 = performance.now();
       loadTimingRef.current!.t8 = t8;
@@ -248,7 +273,8 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
           renderMs: Math.round(t.t8 - t.t7),
           totalMs: Math.round(t.t8 - t.t1),
           nodes: layoutedNodes.length,
-          edges: flowEdges.length
+          edges: flowEdges.length,
+          savedHits
         });
       }
     } catch (err: any) {
@@ -270,7 +296,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
       if (focusPendingRef.current) return;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        fitView({ padding: 0.05, duration: 0 });
+        fitView({ padding: 0.12, duration: 0, maxZoom: 1.4 });
       });
     });
     observer.observe(container);
@@ -297,40 +323,52 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
   }, [getZoom]);
 
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
-  useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+  const positionSignature = useCallback(() => {
+    return [...nodesRef.current]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((n) => `${n.id} x=${Math.round(n.position.x)} y=${Math.round(n.position.y)}`)
+      .join(' | ');
+  }, []);
 
   const resetLayout = useCallback(async () => {
-    resettingLayoutRef.current = true;
-    localStorage.removeItem(positionsKey(sessionId));
-    savedPositionsRef.current = {};
-    const gen = ++layoutGenerationRef.current;
-    currentLoadSessionRef.current = sessionId;
-    const currentNodes = nodesRef.current;
-    const currentEdges = edgesRef.current;
-    const types: NodeTypeMap = {};
-    for (const n of currentNodes) types[n.id] = String(n.type ?? '');
-    const canonicalPositions = await layoutResearchGraph(
-      currentNodes.map((node) => node.id),
-      projectedDataRef.current.edges,
-      'LR',
-      types,
-      currentNodes.length > 15
-    );
-    if (currentLoadSessionRef.current !== sessionId || gen !== layoutGenerationRef.current) return;
-    setNodes(currentNodes.map((node) => ({
-      ...node,
-      position: canonicalPositions[node.id] || node.position
-    })));
-    setEdges(currentEdges);
-    requestAnimationFrame(() => {
+    const before = positionSignature();
+    console.debug('[MindMap] before RESET (layout):', before);
+    // Drop user-dragged positions for this session so the deterministic
+    // canonical arrangement is recomputed from scratch.
+    try {
       localStorage.removeItem(positionsKey(sessionId));
-      resettingLayoutRef.current = false;
-      fitView({ padding: 0.05, duration: 250 });
+    } catch {
+      // storage unavailable - the in-memory ref clear below still applies
+    }
+    savedPositionsRef.current = {};
+    const raw = rawDataRef.current;
+    if (raw.nodes.length > 0) {
+      const projected = buildResearchMapProjection(raw.nodes, raw.edges);
+      const types: NodeTypeMap = {};
+      for (const n of projected.nodes) types[n.id] = String(n.type ?? '');
+      const canonical = await layoutResearchGraph(
+        projected.nodes.map((n) => n.id),
+        projected.edges,
+        'LR',
+        types,
+        projected.nodes.length > 15
+      );
+      const resetNodes = nodesRef.current.map((node) => ({
+        ...node,
+        position: canonical[node.id] || node.position
+      }));
+      setNodes(resetNodes);
+      nodesRef.current = resetNodes;
+    }
+    fitView({ padding: 0.12, duration: 250, maxZoom: 1.4 });
+    requestAnimationFrame(() => {
+      const after = positionSignature();
+      console.debug('[MindMap] after RESET:', after, '| positions unchanged:', after === before);
     });
-  }, [sessionId, setNodes, setEdges, fitView]);
+  }, [fitView, positionSignature, sessionId]);
 
   const handleNodeDragStop = useCallback((_: MouseEvent | TouchEvent, node: Node) => {
-    if (resettingLayoutRef.current) return;
     const nextPositions = {
       ...savedPositionsRef.current,
       [node.id]: { x: node.position.x, y: node.position.y }
@@ -386,7 +424,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
       const target = e.target as HTMLElement | null;
       if (target && target.closest('input, textarea, [contenteditable="true"]')) return;
       if (e.key.toLowerCase() === 'f') {
-        fitView({ padding: 0.05, duration: 250 });
+        fitView({ padding: 0.12, duration: 250, maxZoom: 1.4 });
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -413,12 +451,11 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     );
     setEdges((current) =>
       current.map((edge) => {
-        const relationship = String(edge.data?.relationship || edge.label || '');
-        const relationshipVisible = (relationship === 'SESSION_TO_SEARCH' || relationship === 'SEARCH_TO_SOURCE')
-          ? filter.researchConnections
-          : relationship === 'SOURCE_TO_SOURCE'
-            ? filter.navigationConnections
-            : true;
+        const relationship = String(edge.data?.relationship || '');
+        const relationshipVisible =
+          relationship === 'SEARCH_TO_SOURCE' ? filter.researchConnections :
+          relationship === 'SEARCH_TO_SEARCH' ? filter.searchConnections :
+          true;
         const touchesHiddenNode = hiddenNodeIds.has(edge.source) || hiddenNodeIds.has(edge.target);
         return {
           ...edge,
@@ -558,10 +595,10 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
           onMove={handleViewportChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          minZoom={0.5}
+          minZoom={0.15}
           maxZoom={2.5}
           fitView
-          fitViewOptions={{ padding: 0.05 }}
+          fitViewOptions={{ padding: 0.12, maxZoom: 1.4 }}
           proOptions={{ hideAttribution: true }}
         >
           <ViewportFitter nodeCount={nodes.length} disabled={focusPendingRef.current} />
@@ -602,7 +639,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
             zoom={zoomLevel}
             onZoomIn={() => zoomIn({ duration: 200 })}
             onZoomOut={() => zoomOut({ duration: 200 })}
-            onFitView={() => fitView({ padding: 0.05, duration: 250 })}
+            onFitView={() => fitView({ padding: 0.12, duration: 250, maxZoom: 1.4 })}
             onResetLayout={resetLayout}
             filter={filter}
             onFilterChange={setFilter}

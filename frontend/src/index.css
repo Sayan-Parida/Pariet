@@ -447,10 +447,8 @@ button {
   margin: 0 !important;
 }
 
-/* Edge Strokes */
+/* Edge Strokes - per-relationship color/width come from each edge's inline style */
 .react-flow__edge-path {
-  stroke: var(--graph-edge) !important;
-  stroke-width: 1.4px !important;
   transition: stroke 0.12s ease, stroke-width 0.12s ease !important;
 }
 

@@ -22,6 +22,19 @@ const SHELF_ROW_WIDTH = 2500;
 const SHELF_GAP_X = 170;
 const SHELF_GAP_Y = 150;
 
+let layoutInvocationCount = 0;
+
+function codeUnitCompare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function positionSignatureOf(positions: Record<string, { x: number; y: number }>): string {
+  return Object.keys(positions)
+    .sort(codeUnitCompare)
+    .map((id) => `${id}:${positions[id].x},${positions[id].y}`)
+    .join('|');
+}
+
 interface TreeNode {
   id: string;
   children: TreeChild[];
@@ -329,10 +342,39 @@ export async function layoutResearchGraph(
   types?: NodeTypeMap,
   _compact?: boolean
 ): Promise<Record<string, { x: number; y: number }>> {
+  const invocation = ++layoutInvocationCount;
+  console.debug(
+    `[graphLayout] INPUT #${invocation}`,
+    JSON.stringify({
+      invocation,
+      nodeCount: nodeIds.length,
+      edgeCount: edges.length,
+      orderedNodeIds: nodeIds,
+      orderedEdgeIds: edges.map((e) => e.id),
+      nodes: [...new Set(nodeIds)]
+        .map((id) => ({ id, type: types?.[id] ?? '' }))
+        .sort((a, b) => codeUnitCompare(a.id, b.id)),
+      edges: edges
+        .map((e) => ({ id: e.id, source: e.source, target: e.target }))
+        .sort(
+          (a, b) =>
+            codeUnitCompare(a.id, b.id) ||
+            codeUnitCompare(a.source, b.source) ||
+            codeUnitCompare(a.target, b.target)
+        )
+    })
+  );
+
   const typeMap: NodeTypeMap = types ?? {};
   const ids = [...new Set(nodeIds)];
 
-  if (ids.length === 0) return {};
+  if (ids.length === 0) {
+    console.debug(
+      `[graphLayout] OUTPUT #${invocation}`,
+      JSON.stringify({ invocation, signature: '', positions: [] })
+    );
+    return {};
+  }
 
   const layoutIds = ids.filter(id => typeMap[id] !== 'SESSION');
   const positions: Record<string, { x: number; y: number }> = {};
@@ -372,6 +414,17 @@ export async function layoutResearchGraph(
     const minY = placed.length ? Math.min(...placed.map(p => p.y)) : 0;
     positions[sessionId] = { x: minX - 90, y: minY - LAYOUT_NODE_HEIGHT - 50 };
   }
+
+  console.debug(
+    `[graphLayout] OUTPUT #${invocation}`,
+    JSON.stringify({
+      invocation,
+      signature: positionSignatureOf(positions),
+      positions: Object.keys(positions)
+        .sort(codeUnitCompare)
+        .map((id) => ({ id, x: positions[id].x, y: positions[id].y }))
+    })
+  );
 
   return positions;
 }
