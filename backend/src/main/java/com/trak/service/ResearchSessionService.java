@@ -187,6 +187,7 @@ public class ResearchSessionService {
                 search);
     }
 
+    @Transactional(readOnly = true)
     public MindMapResponse getMindMap(String sessionId) {
         ResearchSession session = getSession(sessionId);
         List<BrowserEvent> events = eventRepository.findBySessionIdOrderByTimestamp(sessionId);
@@ -270,12 +271,16 @@ public class ResearchSessionService {
         // ── Search → result page provenance ────────────────────────────────────
         //
         // Strategy:
-        //   1. Original pageVisitId link: SEARCH → search results page (unchanged)
-        //   2. Same-tab link clicks: search results page tab → subsequent "link" navigations
-        //   3. New-tab results: search results page tab opened a new tab (openerTabId/sourceTabId)
+        //   1. Original pageVisitId link: skip search-engine pages (hidden from
+        //      visible Research Map), but mark as associated to avoid double-counting.
+        //   2. Same-tab link clicks: search results page tab → subsequent "link"
+        //      navigations that land on research pages (not search-engine pages).
+        //   3. New-tab results: search results page tab opened a new tab
+        //      (openerTabId/sourceTabId) with a "link" transition.
         //
-        // Only pages reachable via actual browser provenance (transitionType="link" or
-        // opener relationship) become RESULTS_IN. No timestamp heuristics.
+        // Search-engine result pages (Google, Bing, etc.) are never visible SOURCE
+        // nodes. The provenance chain goes: SEARCH → [hidden search page] → SOURCE.
+        // We only create RESULTS_IN edges to non-search-engine research pages.
 
         // Map: tabId → list of NAVIGATION BrowserEvents in that tab (sorted by timestamp)
         Map<Integer, List<BrowserEvent>> navByTab = events.stream()
@@ -300,17 +305,11 @@ public class ResearchSessionService {
         Set<String> associatedPages = new HashSet<>();
 
         for (SearchQuery sq : searches) {
-            // 1. Original pageVisitId link (search results page)
+            // 1. Mark the search results page as associated but do NOT create a
+            //    RESULTS_IN edge to it. Search-engine pages are hidden from the
+            //    visible Research Map — the edge would point to a non-existent node.
             if (sq.getPageVisitId() != null) {
-                pages.stream()
-                        .filter(pv -> pv.getId().equals(sq.getPageVisitId()))
-                        .findFirst()
-                        .ifPresent(pv -> {
-                            edges.add(new MindMapResponse.MindMapEdge(
-                                    sq.getId(), pv.getId(), "RESULTS_IN",
-                                    "Search results page (same ingestion event)"));
-                            associatedPages.add(pv.getId());
-                        });
+                associatedPages.add(sq.getPageVisitId());
             }
 
             // Find the BrowserEvent for this search's results page
@@ -335,6 +334,13 @@ public class ResearchSessionService {
                 if (nav.getPageVisitId() == null) continue;
                 if (associatedPages.contains(nav.getPageVisitId())) continue;
 
+                // Skip search-engine pages — they are hidden from the visible Research Map
+                PageVisit targetPv = pvById.get(nav.getPageVisitId());
+                if (targetPv != null && isSearchEngineUrl(targetPv.getUrl())) {
+                    associatedPages.add(nav.getPageVisitId());
+                    continue;
+                }
+
                 edges.add(new MindMapResponse.MindMapEdge(
                         sq.getId(), nav.getPageVisitId(), "RESULTS_IN",
                         "Result page opened via link click from search results"));
@@ -356,6 +362,13 @@ public class ResearchSessionService {
 
                 // Must be a "link" transition (opened by clicking a link, not typed)
                 if (!"link".equals(nav.getTransitionType())) continue;
+
+                // Skip search-engine pages
+                PageVisit targetPv = pvById.get(nav.getPageVisitId());
+                if (targetPv != null && isSearchEngineUrl(targetPv.getUrl())) {
+                    associatedPages.add(nav.getPageVisitId());
+                    continue;
+                }
 
                 edges.add(new MindMapResponse.MindMapEdge(
                         sq.getId(), nav.getPageVisitId(), "RESULTS_IN",
@@ -390,5 +403,28 @@ public class ResearchSessionService {
         }
 
         return new MindMapResponse(sessionId, nodes, edges);
+    }
+
+    /**
+     * Returns true if the URL belongs to a search-engine results page
+     * or a search-engine redirect/tracking page.
+     * These pages are hidden from the visible Research Map.
+     */
+    private static boolean isSearchEngineUrl(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase();
+        // Google: search results, redirect tracking, link tracking
+        if (lower.contains("google.com/search") ||
+            lower.contains("google.com/url") ||
+            lower.contains("google.com/link")) {
+            return true;
+        }
+        // Other search engines
+        return lower.contains("bing.com/search") ||
+                lower.contains("duckduckgo.com") ||
+                lower.contains("search.brave.com") ||
+                lower.contains("youtube.com/results") ||
+                lower.contains("github.com/search") ||
+                lower.contains("stackoverflow.com/search");
     }
 }
