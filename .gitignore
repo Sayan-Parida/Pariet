@@ -45,3 +45,5 @@ secrets*.json
 
 # Local logs
 *.log
+# Local Puppeteer browser profile
+.puppeteer-chrome-profile/
