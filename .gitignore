@@ -47,3 +47,5 @@ secrets*.json
 *.log
 # Local Puppeteer browser profile
 .puppeteer-chrome-profile/
+
+.puppeteer-test-profile/
