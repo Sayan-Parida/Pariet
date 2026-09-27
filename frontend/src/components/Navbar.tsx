@@ -48,16 +48,11 @@ export default function Navbar({
       {/* Left: Brand & Session Breadcrumb */}
       <div className="flex items-center gap-2.5 min-w-0">
         <div className="flex items-center gap-2 shrink-0">
-          <div 
-            className="relative w-7 h-7 flex items-center justify-center text-[var(--surface-base)]"
-            style={{ backgroundColor: 'var(--border-strong)' }}
-          >
-            <span className="font-display text-sm font-bold leading-none">{'P'}</span>
-            <span 
-              className="absolute -top-[3px] -right-[3px] w-2 h-2"
-              style={{ backgroundColor: 'var(--accent)' }}
-            />
-          </div>
+          <img
+            src="/pariet-logo.png"
+            alt="Pariet logo"
+            className="w-7 h-7 shrink-0 object-contain"
+          />
           <span className="font-display text-base font-bold tracking-tight leading-none text-[var(--text-primary)]">
             Pariet
           </span>
