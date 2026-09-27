@@ -19,6 +19,9 @@ export interface SessionState {
   sessionId: string | null;
   sessionTitle: string | null;
   isActive: boolean;
+  // Chrome window the session belongs to. Events from other windows must
+  // not be attributed to this session. Null = unknown (legacy behavior).
+  windowId: number | null;
 }
 
 export interface QueuedEvent {

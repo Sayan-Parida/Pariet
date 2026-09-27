@@ -87,7 +87,7 @@ public class EventIngestionService {
                 event.setTimestamp(timestamp);
 
                 if (sessionId != null && PageVisitService.isResearchUrl(url)
-                        && sessionDetector.isValidSessionEvent(sessionId, timestamp)) {
+                        && sessionDetector.isValidSessionEvent(sessionId, timestamp, request.windowId())) {
                     event.setSessionId(sessionId);
                 }
 

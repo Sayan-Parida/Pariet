@@ -25,6 +25,9 @@ public class ResearchSession {
     @Column(name = "end_time")
     private Instant endTime;
 
+    @Column(name = "window_id")
+    private Integer windowId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -72,6 +75,9 @@ public class ResearchSession {
     
     public Instant getEndTime() { return endTime; }
     public void setEndTime(Instant endTime) { this.endTime = endTime; }
+
+    public Integer getWindowId() { return windowId; }
+    public void setWindowId(Integer windowId) { this.windowId = windowId; }
     
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

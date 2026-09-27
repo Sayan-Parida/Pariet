@@ -69,6 +69,14 @@ public class DatabaseMigration {
                 }
                 log.info("Database migration completed. Final browser_event columns: {}", finalColumns);
 
+                // Research session window isolation: nullable window_id records the
+                // Chrome window the session belongs to (null = unknown/legacy).
+                Set<String> sessionColumns = getTableColumns(conn, "research_session");
+                if (!sessionColumns.contains("window_id")) {
+                    log.info("Adding missing column: window_id to research_session");
+                    stmt.execute("ALTER TABLE research_session ADD COLUMN window_id INTEGER;");
+                }
+
             }
         } catch (Exception e) {
             log.error("Database migration failed", e);

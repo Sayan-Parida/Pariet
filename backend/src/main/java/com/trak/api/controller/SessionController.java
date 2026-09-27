@@ -44,7 +44,7 @@ public class SessionController {
 
     @PostMapping
     public ResponseEntity<SessionResponse> createSession(@Valid @RequestBody SessionCreateRequest request) {
-        ResearchSession session = sessionService.createSession(request.title());
+        ResearchSession session = sessionService.createSession(request.title(), request.windowId());
         return ResponseEntity.status(HttpStatus.CREATED).body(mapToResponse(session));
     }
 

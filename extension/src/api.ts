@@ -57,13 +57,15 @@ export const api = {
     }
   },
 
-  async createSession(title?: string): Promise<string | null> {
+  async createSession(title?: string, windowId?: number | null): Promise<string | null> {
     try {
-      const body = title ? JSON.stringify({ title }) : '{}';
+      const payload: { title?: string; windowId?: number } = {};
+      if (title) payload.title = title;
+      if (windowId != null) payload.windowId = windowId;
       const res = await fetchWithTimeout(`${BASE_URL}/api/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         const data = await res.json();

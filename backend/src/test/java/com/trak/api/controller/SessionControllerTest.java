@@ -52,7 +52,7 @@ class SessionControllerTest {
 
     @Test
     void createSession() throws Exception {
-        SessionCreateRequest req = new SessionCreateRequest("My New Session");
+        SessionCreateRequest req = new SessionCreateRequest("My New Session", null);
         
         mockMvc.perform(post("/api/sessions")
                 .contentType(MediaType.APPLICATION_JSON)

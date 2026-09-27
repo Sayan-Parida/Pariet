@@ -45,10 +45,16 @@ public class ResearchSessionService {
 
     @Transactional
     public ResearchSession createSession(String title) {
+        return createSession(title, null);
+    }
+
+    @Transactional
+    public ResearchSession createSession(String title, Integer windowId) {
         ResearchSession session = new ResearchSession();
         session.setTitle(title);
         session.setStatus("ACTIVE");
         session.setStartTime(Instant.now());
+        session.setWindowId(windowId);
         ResearchSession saved = sessionRepository.save(session);
         searchIndexService.indexSession(saved);
         return saved;

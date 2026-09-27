@@ -8,7 +8,7 @@ const QUEUE_LIMIT = 1000;
 async function initState() {
   const data = await chrome.storage.local.get(['sessionState', 'eventQueue', 'backendStatus', 'preExistingTabIds']);
   if (!data.sessionState) {
-    await chrome.storage.local.set({ sessionState: { sessionId: null, sessionTitle: null, isActive: false } as SessionState });
+    await chrome.storage.local.set({ sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState });
   }
   if (!data.eventQueue) {
     await chrome.storage.local.set({ eventQueue: [] as QueuedEvent[] });
@@ -23,6 +23,24 @@ async function initState() {
 
 initState();
 
+// Window isolation rule: a Research Session belongs to the Chrome window
+// where it was started. Only events carrying that windowId may be
+// attributed to the session. A null window on either side (unknown /
+// legacy) falls back to the pre-existing tab rules below.
+//
+// Moved-tab decision (deterministic, based on the event's authoritative
+// windowId at event time, never on tabId history):
+// - Tab moved OUT of the research window: later events carry the new
+//   windowId and are NOT attributed, even if the tab was previously eligible.
+// - Tab moved INTO the research window: later events carry the research
+//   windowId and are evaluated under the normal rules (an unknown tab id is
+//   treated like a newly created tab).
+function windowMatchesSession(sessionState: SessionState, event: BrowserEventRequest): boolean {
+  if (sessionState.windowId == null) return true;
+  if (event.windowId == null) return true;
+  return event.windowId === sessionState.windowId;
+}
+
 // Queue and processing
 async function processEvent(event: BrowserEventRequest) {
   const data = await chrome.storage.local.get(['sessionState', 'eventQueue', 'preExistingTabIds']);
@@ -32,7 +50,7 @@ async function processEvent(event: BrowserEventRequest) {
   // Determine if this event should be attributed to the active session
   let shouldAttributeSession = false;
   
-  if (sessionState.isActive && sessionState.sessionId) {
+  if (sessionState.isActive && sessionState.sessionId && windowMatchesSession(sessionState, event)) {
     const isPreExistingTab = preExistingTabIds.includes(event.tabId);
     
     if (!isPreExistingTab) {
@@ -84,7 +102,7 @@ async function flushQueue() {
     const queuedEvent = queue[i].event;
     let shouldAttributeSession = false;
     
-    if (sessionState.isActive && sessionState.sessionId) {
+    if (sessionState.isActive && sessionState.sessionId && windowMatchesSession(sessionState, queuedEvent)) {
       const isPreExistingTab = preExistingTabIds.includes(queuedEvent.tabId);
       
       if (!isPreExistingTab) {
@@ -182,6 +200,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
       url: url,
       title: tab.title,
       tabId: details.tabId,
+      windowId: tab.windowId,
       transitionType: details.transitionType,
       transitionQualifiers: details.transitionQualifiers,
       timestamp: Date.now(),
@@ -287,25 +306,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true; // keep channel open
   } else if (message.type === 'START_SESSION') {
-    api.createSession(message.title).then(async (id) => {
+    // Async bootstrap: the session belongs to the currently focused window.
+    // Events from any other window must never be attributed to it
+    // (see windowMatchesSession).
+    (async () => {
+      const focusedWindow = await chrome.windows.getLastFocused().catch(() => null);
+      const sessionWindowId: number | null =
+        focusedWindow && focusedWindow.id != null ? focusedWindow.id : null;
+    api.createSession(message.title, sessionWindowId).then(async (id) => {
       if (id) {
-        // Capture all currently open tabs as pre-existing (they should NOT be attributed to the new session
+        // Capture currently open tabs in the session window as pre-existing (they should NOT be attributed to the new session
         // unless the user actively navigates in them after session start)
-        const tabs = await chrome.tabs.query({});
+        const tabs = await chrome.tabs.query(sessionWindowId != null ? { windowId: sessionWindowId } : {});
         const preExistingTabIds = tabs
           .filter(tab => !tab.incognito)
           .filter(tab => tab.url != null && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://') && !tab.url.startsWith('about:'))
           .map(tab => tab.id!);
         
         await chrome.storage.local.set({ 
-          sessionState: { sessionId: id, sessionTitle: message.title, isActive: true } as SessionState,
+          sessionState: { sessionId: id, sessionTitle: message.title, isActive: true, windowId: sessionWindowId } as SessionState,
           preExistingTabIds
         });
         sendResponse({ success: true, preExistingTabCount: preExistingTabIds.length });
       } else {
         sendResponse({ success: false });
       }
-    });
+      });
+    })();
     return true;
   } else if (message.type === 'END_SESSION') {
     chrome.storage.local.get(['sessionState']).then(async data => {
@@ -314,7 +341,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const success = await api.endSession(sessionId);
         if (success) {
           await chrome.storage.local.set({ 
-            sessionState: { sessionId: null, sessionTitle: null, isActive: false } as SessionState,
+            sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
             preExistingTabIds: []
           });
         } else {
@@ -331,13 +358,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   } else if (message.type === 'CLEAR_SESSION_STATE') {
     chrome.storage.local.set({ 
-      sessionState: { sessionId: null, sessionTitle: null, isActive: false } as SessionState,
+      sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
       preExistingTabIds: []
     }).then(() => sendResponse({ success: true }));
     return true;
   } else if (message.type === 'SET_SESSION_STATE') {
     chrome.storage.local.set({
-      sessionState: { sessionId: message.sessionId, sessionTitle: message.sessionTitle ?? null, isActive: true } as SessionState
+      sessionState: { sessionId: message.sessionId, sessionTitle: message.sessionTitle ?? null, isActive: true, windowId: message.windowId ?? null } as SessionState
     }).then(() => sendResponse({ success: true }));
     return true;
   }

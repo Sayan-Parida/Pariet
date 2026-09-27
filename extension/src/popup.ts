@@ -57,7 +57,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const session = await api.getSession(sessionState.sessionId);
       if (!session || session.status !== 'ACTIVE') {
         await new Promise<void>((resolve) => chrome.runtime.sendMessage({ type: 'CLEAR_SESSION_STATE' }, () => resolve()));
-        return { sessionId: null, sessionTitle: null, isActive: false };
+        // Adopted sessions carry no local window context; unknown window
+        // preserves the legacy tab-based attribution for them.
+        return { sessionId: null, sessionTitle: null, isActive: false, windowId: null };
       }
       return sessionState;
     }
@@ -70,7 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
           sessionId: active.id,
           sessionTitle: active.title
         }, () => resolve()));
-        return { sessionId: active.id, sessionTitle: active.title, isActive: true };
+        // No local window context when adopting; unknown window preserves
+        // the legacy tab-based attribution for the adopted session.
+        return { sessionId: active.id, sessionTitle: active.title, isActive: true, windowId: null };
       }
     }
     return sessionState;
