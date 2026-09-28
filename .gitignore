@@ -20,6 +20,9 @@ extension/dist/
 # The dashboard is built into the extension, so this is build output too
 extension/dashboard/
 
+# Chrome Web Store upload package
+*.zip
+
 # TypeScript incremental build state
 **/*.tsbuildinfo
 frontend/*.tsbuildinfo
