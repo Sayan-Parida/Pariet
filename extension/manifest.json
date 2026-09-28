@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Trak",
+  "name": "Pariet",
   "version": "0.1.0",
   "description": "Capture and visualize your research journey",
   "icons": {
@@ -16,7 +16,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Trak",
+    "default_title": "Pariet",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
