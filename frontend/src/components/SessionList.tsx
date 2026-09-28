@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Search, 
   ChevronLeft, 
   ChevronRight, 
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import { Session, SessionStatus } from '../types';
 import { apiClient } from '../api/client';
@@ -39,7 +40,12 @@ export default function SessionList({
   const [loading, setLoading] = useState(true);
   const [wiping, setWiping] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
-  const [retention, setRetention] = useState<{ eventDays: number; sessionDays: number } | null>(null);
+  const wipeTimerRef = useRef<number | null>(null);
+
+  // Clear the pending disarm timer if the sidebar unmounts while armed.
+  useEffect(() => () => {
+    if (wipeTimerRef.current) window.clearTimeout(wipeTimerRef.current);
+  }, []);
 
   const fetchSessions = async () => {
     try {
@@ -79,10 +85,29 @@ export default function SessionList({
     }
   };
 
+  const cancelDeleteAll = () => {
+    if (wipeTimerRef.current) {
+      window.clearTimeout(wipeTimerRef.current);
+      wipeTimerRef.current = null;
+    }
+    setConfirmWipe(false);
+  };
+
   const handleDeleteAll = async () => {
     if (!confirmWipe) {
       setConfirmWipe(true);
+      // Disarm if the user does not follow up, so the destructive state
+      // cannot linger on the footer.
+      if (wipeTimerRef.current) window.clearTimeout(wipeTimerRef.current);
+      wipeTimerRef.current = window.setTimeout(() => {
+        setConfirmWipe(false);
+        wipeTimerRef.current = null;
+      }, 5000);
       return;
+    }
+    if (wipeTimerRef.current) {
+      window.clearTimeout(wipeTimerRef.current);
+      wipeTimerRef.current = null;
     }
     try {
       setWiping(true);
@@ -98,12 +123,6 @@ export default function SessionList({
       setConfirmWipe(false);
     }
   };
-
-  useEffect(() => {
-    apiClient.getDataRetention()
-      .then(setRetention)
-      .catch(() => setRetention(null));
-  }, []);
 
   const filteredSessions = sessions.filter((s) => {
     const query = searchFilter.trim().toLowerCase();
@@ -309,54 +328,46 @@ export default function SessionList({
         )}
       </div>
 
-      {/* Data & privacy controls */}
-      <div
-        className="px-3 py-2.5 border-t-2 space-y-1.5 shrink-0"
-        style={{ borderColor: 'var(--border-subtle)' }}
-      >
-        <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-faint)]">
-          <span>Data &amp; privacy</span>
-          <span>On this device</span>
-        </div>
-        {retention && (
-          <p className="font-mono text-[9px] leading-snug text-[var(--text-faint)]">
-            Retains pages &amp; searches {retention.eventDays}d, sessions {retention.sessionDays}d.
-          </p>
-        )}
-        <button
-          onClick={handleDeleteAll}
-          disabled={wiping}
-          className={`w-full border-2 px-2 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-colors disabled:opacity-50 ${
-            confirmWipe
-              ? 'border-[var(--status-danger)] text-[var(--status-danger)] bg-[var(--surface-base)]'
-              : 'border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--status-danger)] hover:text-[var(--status-danger)]'
-          }`}
-        >
-          {wiping ? 'Deleting...' : confirmWipe ? 'Click again to confirm erase' : 'Delete all data'}
-        </button>
-        {confirmWipe && !wiping && (
-          <p className="font-mono text-[9px] leading-snug text-[var(--text-faint)]">
-            Erases every session, URL, and search from this device permanently.
-          </p>
-        )}
-      </div>
-
       {/* Footer */}
       <div 
-        className="h-8 px-3 text-[10px] font-mono font-bold text-[var(--surface-base)] flex items-center justify-between shrink-0"
+        className="h-8 px-3 text-[10px] font-mono font-bold text-[var(--surface-base)] flex items-center justify-between gap-2 shrink-0"
         style={{ backgroundColor: 'var(--border-strong)' }}
       >
-        <span className="uppercase tracking-[0.14em]">Pariet / Local</span>
-        <button
-          aria-label="Reset"
-          onClick={() => {
-            if (window.confirm('Reset sample research graphs?')) {
-              researchStore.resetToDefault();
-            }
-          }}
-          className="uppercase tracking-[0.1em] border border-[var(--surface-base)] px-1.5 py-px hover:bg-[var(--surface-base)] hover:text-[var(--border-strong)] transition-colors"
-        >
-        </button>
+        <span className="uppercase tracking-[0.14em] truncate">
+          {wiping ? 'Erasing...' : confirmWipe ? 'Erase everything?' : 'Pariet / Local'}
+        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {confirmWipe && !wiping && (
+            <button
+              aria-label="Cancel erase"
+              title="Cancel"
+              onClick={cancelDeleteAll}
+              className="flex items-center gap-1 border border-[var(--surface-base)] px-1.5 py-px uppercase tracking-[0.1em] leading-none hover:bg-[var(--surface-base)] hover:text-[var(--border-strong)] transition-colors"
+            >
+              <X className="w-3 h-3" />
+              No
+            </button>
+          )}
+          <button
+            aria-label={confirmWipe ? 'Confirm erase all data' : 'Delete all data'}
+            title="Delete all data"
+            onClick={handleDeleteAll}
+            disabled={wiping}
+            className="w-6 h-6 flex items-center justify-center border border-transparent hover:border-[var(--surface-base)] transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+          <button
+            aria-label="Reset"
+            onClick={() => {
+              if (window.confirm('Reset sample research graphs?')) {
+                researchStore.resetToDefault();
+              }
+            }}
+            className="uppercase tracking-[0.1em] border border-[var(--surface-base)] px-1.5 py-px hover:bg-[var(--surface-base)] hover:text-[var(--border-strong)] transition-colors"
+          >
+          </button>
+        </div>
       </div>
     </aside>
   );
