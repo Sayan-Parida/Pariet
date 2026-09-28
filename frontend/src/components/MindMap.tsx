@@ -19,7 +19,7 @@ import '@xyflow/react/dist/style.css';
 import { layoutResearchGraph, LAYOUT_NODE_WIDTH, LAYOUT_NODE_HEIGHT } from '../utils/graphLayout';
 import { buildResearchMapProjection } from '../utils/researchMapViewModel';
 import { apiClient } from '../api/client';
-import { researchStore } from '../api/researchStore';
+import { dataEvents } from '../api/dataEvents';
 import { nodeTypes } from './CustomNodes';
 import NodeDetailPanel from './NodeDetailPanel';
 import { MapControls, MapFilterState, DEFAULT_MAP_FILTER } from './MapControls';
@@ -33,21 +33,22 @@ interface Props {
   onFocusNodeConsumed?: () => void;
 }
 
-const positionsKey = (sessionId: string) => `researchmind:node-positions:${sessionId}`;
-
 type SavedPositions = Record<string, { x: number; y: number }>;
 
-const readSavedPositions = (sessionId: string): SavedPositions => {
+// Layout is saved through the data layer so it lands in the same local store
+// as everything else, rather than in a separate localStorage key.
+const readSavedPositions = async (sessionId: string): Promise<SavedPositions> => {
   try {
-    const value = localStorage.getItem(positionsKey(sessionId));
-    return value ? JSON.parse(value) as SavedPositions : {};
+    return await apiClient.getPositions(sessionId);
   } catch {
     return {};
   }
 };
 
 const writeSavedPositions = (sessionId: string, positions: SavedPositions) => {
-  localStorage.setItem(positionsKey(sessionId), JSON.stringify(positions));
+  void apiClient.savePositions(sessionId, positions).catch(() => {
+    // A failed layout save is not worth interrupting the user over.
+  });
 };
 
 function ResearchEdge({
@@ -99,6 +100,30 @@ function ResearchEdge({
 }
 
 const edgeTypes = { research: ResearchEdge };
+
+/**
+ * Describe a connection from the selected node's point of view.
+ *
+ * Derived from the edge's relationship type and direction, so the wording is
+ * always specific ("Led to this result") rather than a generic "relates to".
+ * The backend's edge label is used when it is more descriptive than the
+ * type-derived default.
+ */
+const RELATION_PHRASE: Record<string, { outbound: string; inbound: string }> = {
+  SEARCH_TO_SOURCE: { outbound: 'Opened from this search', inbound: 'Led to this result' },
+  SEARCH_TO_SEARCH: { outbound: 'Followed by this search', inbound: 'Preceded by this search' },
+  SOURCE_TO_SOURCE: { outbound: 'Navigated to this page', inbound: 'Arrived from this page' }
+};
+
+function relationshipPhrase(edge: Edge, inbound: boolean): string {
+  const type = String((edge.data as Record<string, unknown> | undefined)?.relationship ?? '');
+  const phrases = RELATION_PHRASE[type];
+  if (phrases) {
+    return inbound ? phrases.inbound : phrases.outbound;
+  }
+  const fallback = String(edge.label ?? '').trim();
+  return fallback || 'Connected to this node';
+}
 
 function ViewportFitter({ nodeCount, disabled }: { nodeCount: number; disabled?: boolean }) {
   const { fitView } = useReactFlow();
@@ -161,7 +186,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
       }
       
       rawDataRef.current = { nodes: data.nodes, edges: data.edges };
-      const savedPositions = readSavedPositions(loadSessionId);
+      const savedPositions = await readSavedPositions(loadSessionId);
       savedPositionsRef.current = savedPositions;
 
       const t4 = performance.now();
@@ -190,7 +215,9 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
             id: e.id,
             source: e.source,
             target: e.target,
-            label: '',
+            // The rendered edge shows no text, but the label is what the node
+            // detail panel reads to describe the connection.
+            label: e.label,
             type: 'research',
             data: {
               priority,
@@ -309,7 +336,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
 
   useEffect(() => {
     loadGraph();
-    const unsubscribe = researchStore.subscribe(() => {
+    const unsubscribe = dataEvents.subscribe(() => {
       loadGraph();
     });
     return () => {
@@ -351,11 +378,9 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     console.debug('[MindMap] before RESET (layout):', before);
     // Drop user-dragged positions for this session so the deterministic
     // canonical arrangement is recomputed from scratch.
-    try {
-      localStorage.removeItem(positionsKey(sessionId));
-    } catch {
-      // storage unavailable - the in-memory ref clear below still applies
-    }
+    void apiClient.savePositions(sessionId, {}).catch(() => {
+      // A failed clear is not worth interrupting the user over.
+    });
     savedPositionsRef.current = {};
     const raw = rawDataRef.current;
     if (raw.nodes.length > 0) {
@@ -470,6 +495,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
         const relationshipVisible =
           relationship === 'SEARCH_TO_SOURCE' ? filter.researchConnections :
           relationship === 'SEARCH_TO_SEARCH' ? filter.searchConnections :
+          relationship === 'SOURCE_TO_SOURCE' ? filter.pageConnections :
           true;
         const touchesHiddenNode = hiddenNodeIds.has(edge.source) || hiddenNodeIds.has(edge.target);
         return {
@@ -493,7 +519,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
             id: targetNode.id,
             label: String(tData.label || targetNode.id),
             type: targetNode.type as NodeType,
-            relationship: String(edge.label || 'relates to')
+            relationship: relationshipPhrase(edge, false)
           });
         }
       } else if (edge.target === selectedNodeData.id) {
@@ -504,7 +530,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
             id: sourceNode.id,
             label: String(sData.label || sourceNode.id),
             type: sourceNode.type as NodeType,
-            relationship: `inbound: ${String(edge.label || 'relates to')}`
+            relationship: relationshipPhrase(edge, true)
           });
         }
       }

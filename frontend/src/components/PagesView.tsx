@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { PageVisit } from '../types';
 import { apiClient } from '../api/client';
-import { researchStore } from '../api/researchStore';
+import { dataEvents } from '../api/dataEvents';
 import SourceReaderModal from './SourceReaderModal';
 
 interface Props {
@@ -38,7 +38,7 @@ export default function PagesView({ sessionId }: Props) {
 
   useEffect(() => {
     fetchPages();
-    const unsubscribe = researchStore.subscribe(() => {
+    const unsubscribe = dataEvents.subscribe(() => {
       fetchPages();
     });
     return () => {

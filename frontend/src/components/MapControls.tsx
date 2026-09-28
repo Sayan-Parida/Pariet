@@ -16,6 +16,7 @@ export interface MapFilterState {
   sources: boolean;
   researchConnections: boolean;
   searchConnections: boolean;
+  pageConnections: boolean;
 }
 
 export const DEFAULT_MAP_FILTER: MapFilterState = {
@@ -23,7 +24,8 @@ export const DEFAULT_MAP_FILTER: MapFilterState = {
   searches: true,
   sources: true,
   researchConnections: true,
-  searchConnections: true
+  searchConnections: true,
+  pageConnections: true
 };
 
 export const PRIMARY_RELATIONSHIPS = new Set([
@@ -47,15 +49,45 @@ interface MapControlsProps {
 
 type FilterKey = keyof MapFilterState;
 
-const NODE_FILTER_ROWS: Array<{ key: Exclude<FilterKey, 'researchConnections' | 'searchConnections'>; label: string; tone: string }> = [
+const NODE_FILTER_ROWS: Array<{ key: Exclude<FilterKey, 'researchConnections' | 'searchConnections' | 'pageConnections'>; label: string; tone: string }> = [
   { key: 'sessions', label: 'Sessions', tone: 'var(--node-session)' },
   { key: 'searches', label: 'Searches', tone: 'var(--node-search)' },
   { key: 'sources', label: 'Sources', tone: 'var(--node-page)' }
 ];
 
-const CONNECTION_FILTER_ROWS: Array<{ key: 'researchConnections' | 'searchConnections'; label: string; hint: string; tone: string }> = [
-  { key: 'researchConnections', label: 'Search → Source', hint: 'how searches lead to sources', tone: 'var(--node-search)' },
-  { key: 'searchConnections', label: 'Search → Search', hint: 'related search queries', tone: 'var(--node-search)' }
+/**
+ * One row per edge style the map actually draws, with the swatch and dash
+ * pattern matching the rendered edge so this list doubles as the colour key.
+ * Colors/patterns mirror the ResearchEdge component in MindMap.tsx.
+ */
+const CONNECTION_FILTER_ROWS: Array<{
+  key: 'researchConnections' | 'searchConnections' | 'pageConnections';
+  label: string;
+  hint: string;
+  color: string;
+  dash: string;
+}> = [
+  {
+    key: 'researchConnections',
+    label: 'Search → Source',
+    hint: 'a search led to this page',
+    color: 'var(--border-strong)',
+    dash: 'none'
+  },
+  {
+    key: 'searchConnections',
+    label: 'Search → Search',
+    hint: 'the next search you ran',
+    color: '#FF7A3D',
+    dash: '5 4'
+  },
+  {
+    key: 'pageConnections',
+    label: 'Page → Page',
+    hint: 'direct moves between saved pages',
+    color: '#72E6C1',
+    dash: '6 5'
+  }
 ];
 
 export const MapControls = ({
@@ -103,16 +135,19 @@ export const MapControls = ({
     filter.searches !== DEFAULT_MAP_FILTER.searches ||
     filter.sources !== DEFAULT_MAP_FILTER.sources ||
     filter.researchConnections !== DEFAULT_MAP_FILTER.researchConnections ||
-    filter.searchConnections !== DEFAULT_MAP_FILTER.searchConnections;
+    filter.searchConnections !== DEFAULT_MAP_FILTER.searchConnections ||
+    filter.pageConnections !== DEFAULT_MAP_FILTER.pageConnections;
 
   const handleToggle = (key: FilterKey) => {
     onFilterChange({ ...filter, [key]: !filter[key] });
   };
 
-  const FilterRow = ({ label, hint, tone, checked, onToggle }: {
+  const FilterRow = ({ label, hint, tone, dash, checked, onToggle }: {
     label: string;
     hint?: string;
     tone: string;
+    /** Dash pattern for edge rows, mirroring how the edge is drawn. */
+    dash?: string;
     checked: boolean;
     onToggle: () => void;
   }) => (
@@ -122,10 +157,24 @@ export const MapControls = ({
       className="w-full flex items-center justify-between gap-2 py-[7px] px-0.5 rounded-[var(--radius-xs)] text-left group"
     >
       <span className="flex items-center gap-2 min-w-0">
-        <span
-          className="w-2.5 h-2.5 shrink-0 border-2 border-[var(--border-strong)]"
-          style={{ backgroundColor: tone, opacity: 1 }}
-        />
+        {dash ? (
+          // Edge rows show a short line in the edge's real colour and dash
+          // pattern, so the filter list doubles as the map's colour key.
+          <span
+            className="w-5 shrink-0"
+            style={{
+              height: 0,
+              borderTopWidth: 2,
+              borderTopStyle: dash === 'none' ? 'solid' : 'dashed',
+              borderTopColor: tone
+            }}
+          />
+        ) : (
+          <span
+            className="w-2.5 h-2.5 shrink-0 border-2 border-[var(--border-strong)]"
+            style={{ backgroundColor: tone, opacity: 1 }}
+          />
+        )}
         <span className="flex flex-col min-w-0">
           <span className={`text-[11px] font-semibold tracking-[0.01em] leading-none ${checked ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
             {label}
@@ -225,7 +274,8 @@ export const MapControls = ({
                         key={row.key}
                         label={row.label}
                         hint={row.hint}
-                        tone={row.tone}
+                        tone={row.color}
+                        dash={row.dash}
                         checked={filter[row.key]}
                         onToggle={() => handleToggle(row.key)}
                       />

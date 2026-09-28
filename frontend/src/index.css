@@ -127,6 +127,10 @@ button {
   background: transparent;
   padding: 0;
   color: inherit;
+  /* Browsers default buttons to text-align: center, which silently centers
+     block-level text inside a button. Most buttons here are left-aligned
+     containers, so opt out globally and re-center per button where wanted. */
+  text-align: left;
 }
 
 /* Custom Scrollbars */

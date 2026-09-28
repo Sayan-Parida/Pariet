@@ -76,7 +76,16 @@ const metaNumber = (metadata: Record<string, unknown> | undefined, key: string):
 
 // Human labels only for relationships the graph genuinely produces. Anything
 // unknown keeps the graph's own label — nothing is invented.
+// Relationship phrases arrive already written from the reader's point of view
+// (see RELATION_PHRASE in MindMap.tsx), so they are matched as-is. The
+// lower-cased type names are kept for edges that still arrive as raw types.
 const PATH_LABEL: Record<string, string> = {
+  'opened from this search': 'Opened from this search',
+  'led to this result': 'Led to this result',
+  'navigated to this page': 'Navigated to this page',
+  'arrived from this page': 'Arrived from this page',
+  'followed by this search': 'Followed by this search',
+  'preceded by this search': 'Preceded by this search',
   'results in': 'Opened from this search',
   'inbound: results in': 'Led to this result',
   'page to page': 'Navigated to this page',
@@ -91,9 +100,8 @@ const PATH_LABEL: Record<string, string> = {
 
 const humanizeRel = (rel: string): string => {
   if (!rel) return '';
-  const label = PATH_LABEL[rel.toLowerCase()];
-  if (label) return label;
-  return rel.replace(/^inbound: /, '').replace(/^\w/, (c) => c.toUpperCase());
+  const stripped = rel.replace(/^inbound: /, '').trim();
+  return PATH_LABEL[stripped.toLowerCase()] ?? stripped;
 };
 
 const wordJoin = (parts: Array<string | null | undefined>) => {
@@ -274,10 +282,10 @@ export default function NodeDetailPanel({
                 <button
                   key={`${c.id}-${c.relationship}-${index}`}
                   onClick={() => onSelectConnectedNode?.(c.id)}
-                  className="w-full flex items-center justify-between gap-2 p-2 rounded-[var(--radius-sm)] hover:bg-[var(--surface-hover)] border border-[var(--border-subtle)] transition-colors group"
+                  className="w-full flex items-center justify-between gap-2 p-2 rounded-[var(--radius-sm)] hover:bg-[var(--surface-hover)] border border-[var(--border-subtle)] transition-colors group text-left"
                 >
-                  <div className="min-w-0 pr-1">
-                    <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase block">
+                  <div className="min-w-0 flex-1 pr-1 text-left">
+                    <span className="text-[9px] font-mono text-[var(--text-faint)] uppercase block truncate">
                       {c.relationship}
                     </span>
                     <span className="text-xs font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] truncate block">

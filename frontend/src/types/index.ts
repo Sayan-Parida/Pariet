@@ -118,70 +118,6 @@ export interface MindMapData {
   edges: MindMapEdge[];
 }
 
-export interface ResearchGraphNode {
-  id: string;
-  type: NodeType;
-  label: string;
-  metadata: {
-    domain?: string;
-    url?: string;
-    abstract?: string;
-    authors?: string[];
-    citations?: number;
-    year?: number;
-    score?: number;
-    insights?: string[];
-    [key: string]: unknown;
-  };
-}
-
-export interface ResearchGraphEdge {
-  source: string;
-  target: string;
-  relationshipType: RelationshipType | string;
-  confidence: number;
-  reason: string;
-  sourceTimestamp: string | null;
-  targetTimestamp: string | null;
-  metadata?: Record<string, unknown>;
-}
-
-export interface ResearchGraphData {
-  sessionId: string;
-  nodes: ResearchGraphNode[];
-  edges: ResearchGraphEdge[];
-}
-
-export interface ResearchSearchResult {
-  id: string;
-  type: NodeType | string;
-  label: string;
-  sessionId: string;
-  timestamp: string;
-  url: string | null;
-  domain: string | null;
-  visitCount: number;
-  score: number;
-  importanceScore: number;
-  matchedTerms: string[];
-  reasons: string[];
-  abstract?: string;
-  metadata: Record<string, unknown>;
-  graphContext: Array<{
-    source: string;
-    target: string;
-    relationshipType: string;
-    reason: string;
-  }>;
-}
-
-export interface ResearchSearchData {
-  query: string;
-  normalizedQuery: string;
-  totalResults: number;
-  results: ResearchSearchResult[];
-}
-
 export interface ResumePoint {
   sessionId: string;
   page: {
@@ -198,13 +134,6 @@ export interface ResumePoint {
     engine: string;
     timestamp: string;
   } | null;
-}
-
-export interface ResearchSynthesisStep {
-  step: number;
-  title: string;
-  description: string;
-  status: 'pending' | 'running' | 'completed';
 }
 
 export interface ProjectedNode {

@@ -1,162 +1,127 @@
-import { 
-  Session, 
-  PageVisit, 
-  SearchQuery, 
-  TimelineEntry, 
-  MindMapData, 
-  ResearchGraphData, 
-  ResearchSearchData,
+import {
+  Session,
+  PageVisit,
+  SearchQuery,
+  TimelineEntry,
+  MindMapData,
   ResumePoint
 } from '../types';
-import { researchStore } from './researchStore';
 import { sanitizeSessions } from './sanitize';
 
-async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options);
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+/**
+ * The dashboard's data source.
+ *
+ * The dashboard ships inside the extension and talks to the service worker
+ * over chrome.runtime messaging. The worker reads and writes IndexedDB on this
+ * device, so there is no server to run and nothing to configure.
+ *
+ * If the page is opened outside the extension (a plain dev server, for
+ * example) there is no worker to talk to, and every call fails with a clear
+ * message rather than quietly showing invented data.
+ */
+
+interface WorkerResponse {
+  ok: boolean;
+  data?: unknown;
+  error?: string;
+}
+
+declare const chrome:
+  | { runtime?: { sendMessage?: (message: unknown) => Promise<unknown> } }
+  | undefined;
+
+const NOT_IN_EXTENSION =
+  'Open Pariet from the extension. This page needs the Pariet extension to read your research.';
+
+function inExtension(): boolean {
+  return typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function';
+}
+
+async function callWorker<T>(request: Record<string, unknown>): Promise<T> {
+  const send = chrome?.runtime?.sendMessage;
+  if (!send) throw new Error(NOT_IN_EXTENSION);
+
+  // A Manifest V3 service worker is stopped whenever it is idle, so the first
+  // message after a pause can arrive while the worker is still waking up and
+  // fail with "Receiving end does not exist". Retry once so a cold worker does
+  // not surface as an error to the user.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = (await send(request)) as WorkerResponse | undefined;
+      if (!response) throw new Error('No response from the Pariet service worker');
+      if (!response.ok) throw new Error(response.error ?? 'Request failed');
+      return response.data as T;
+    } catch (error) {
+      const waking = /Receiving end does not exist|Could not establish connection/i.test(
+        error instanceof Error ? error.message : String(error)
+      );
+      if (!waking || attempt === 1) throw error;
+      await new Promise((r) => setTimeout(r, 250));
+    }
   }
-  return response.json();
+  throw new Error('Request failed');
 }
 
 export const apiClient = {
+  isAvailable(): boolean {
+    return inExtension();
+  },
+
   getSessions: async (): Promise<Session[]> => {
-    try {
-      return sanitizeSessions(await fetchJson<Session[]>('/api/sessions'));
-    } catch {
-      return sanitizeSessions(researchStore.getSessions());
-    }
-  },
-
-  getSession: async (id: string): Promise<Session> => {
-    try {
-      return await fetchJson<Session>(`/api/sessions/${id}`);
-    } catch {
-      const session = researchStore.getSession(id);
-      if (!session) throw new Error(`Session ${id} not found`);
-      return session;
-    }
-  },
-
-  createSession: async (title?: string, description?: string, tags: string[] = []): Promise<Session> => {
-    try {
-      return await fetchJson<Session>('/api/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, tags })
-      });
-    } catch {
-      return researchStore.createSession(title, description, tags);
-    }
-  },
-
-  updateSession: async (id: string, data: Partial<Session>): Promise<Session> => {
-    try {
-      return await fetchJson<Session>(`/api/sessions/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-    } catch {
-      return researchStore.updateSession(id, data);
-    }
+    return sanitizeSessions(await callWorker<Session[]>({ type: 'LIST_SESSIONS' }));
   },
 
   deleteSession: async (id: string): Promise<void> => {
-    let response: Response;
-    try {
-      response = await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
-    } catch {
-      // Backend unreachable - fall back to the local mirror.
-      researchStore.deleteSession(id);
-      return;
-    }
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
-    }
-    researchStore.deleteSession(id);
+    await callWorker({ type: 'DELETE_SESSION', sessionId: id });
   },
 
-  /**
-   * Erase all browsing data from the backend database and the browser's
-   * localStorage mirror. Irreversible.
-   */
   deleteAllData: async (): Promise<void> => {
-    let response: Response;
-    try {
-      response = await fetch('/api/sessions/all', { method: 'DELETE' });
-    } catch {
-      // Backend unreachable: clear the local mirror so nothing persists here.
-      researchStore.clearAll();
-      return;
-    }
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
-    }
-    researchStore.clearAll();
+    await callWorker({ type: 'DELETE_ALL_DATA' });
   },
 
   getTimeline: async (id: string): Promise<TimelineEntry[]> => {
-    try {
-      return await fetchJson<TimelineEntry[]>(`/api/sessions/${id}/timeline`);
-    } catch {
-      return researchStore.getTimeline(id);
-    }
+    return callWorker<TimelineEntry[]>({ type: 'GET_TIMELINE', sessionId: id });
   },
 
   getPages: async (id: string): Promise<PageVisit[]> => {
-    try {
-      return await fetchJson<PageVisit[]>(`/api/sessions/${id}/pages`);
-    } catch {
-      return researchStore.getPages(id);
-    }
+    return callWorker<PageVisit[]>({ type: 'GET_PAGES', sessionId: id });
   },
 
   getSearches: async (id: string): Promise<SearchQuery[]> => {
-    try {
-      return await fetchJson<SearchQuery[]>(`/api/sessions/${id}/searches`);
-    } catch {
-      return researchStore.getSearches(id);
-    }
+    return callWorker<SearchQuery[]>({ type: 'GET_SEARCHES', sessionId: id });
   },
 
   getResumePoint: async (id: string): Promise<ResumePoint> => {
-    try {
-      return await fetchJson<ResumePoint>(`/api/sessions/${id}/resume-point`);
-    } catch {
-      return researchStore.getResumePoint(id);
-    }
+    return callWorker<ResumePoint>({ type: 'GET_RESUME_POINT', sessionId: id });
   },
 
   getMindMap: async (id: string): Promise<MindMapData> => {
-    try {
-      return await fetchJson<MindMapData>(`/api/sessions/${id}/mindmap`);
-    } catch {
-      return researchStore.getMindMap(id);
-    }
+    const map = await callWorker<{ nodes: MindMapData['nodes']; edges: MindMapData['edges'] }>({
+      type: 'GET_MINDMAP',
+      sessionId: id
+    });
+    return { sessionId: id, nodes: map.nodes, edges: map.edges };
   },
 
-  getResearchGraph: async (id: string): Promise<ResearchGraphData> => {
-    try {
-      return await fetchJson<ResearchGraphData>(`/api/sessions/${id}/research-graph`);
-    } catch {
-      return researchStore.getResearchGraph(id);
-    }
+  /** Saved mind-map layout, stored locally with everything else. */
+  getPositions: async (id: string): Promise<Record<string, { x: number; y: number }>> => {
+    return callWorker<Record<string, { x: number; y: number }>>({ type: 'GET_POSITIONS', sessionId: id });
   },
 
-  searchResearch: async (query: string): Promise<ResearchSearchData> => {
-    try {
-      return await fetchJson<ResearchSearchData>(`/api/research/search?q=${encodeURIComponent(query)}`);
-    } catch {
-      return researchStore.searchAcrossResearch(query);
-    }
+  savePositions: async (
+    id: string,
+    positions: Record<string, { x: number; y: number }>
+  ): Promise<void> => {
+    await callWorker({ type: 'SAVE_POSITIONS', sessionId: id, positions });
   },
 
-  executeDeepResearch: async (
-    sessionId: string, 
-    query: string, 
-    onProgress?: (step: number, message: string) => void
-  ) => {
-    return researchStore.executeDeepResearch(sessionId, query, onProgress);
+  /** Reopen a session's pages as tabs, with the stopping point focused. */
+  restoreTabs: async (urls: string[], focusUrl: string | null): Promise<number> => {
+    const result = await callWorker<{ ok: boolean; count: number }>({
+      type: 'RESTORE_TABS',
+      urls,
+      focusUrl
+    });
+    return result.count;
   }
 };

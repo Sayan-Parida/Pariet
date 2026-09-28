@@ -1,9 +1,10 @@
-# Maven build output
+# Java build output (legacy backend, removed)
 backend/target/
 
-# Local SQLite runtime data (browsing history lives here - never commit any of
-# it, including WAL/journal sidecars)
+# Local research data. Real browsing history: never commit it.
+# backend/data/ is the legacy SQLite store from the removed server backend.
 backend/data/
+data-export/
 
 # Node dependencies
 **/node_modules/
@@ -16,6 +17,8 @@ frontend/.vite/
 
 # Extension build output
 extension/dist/
+# The dashboard is built into the extension, so this is build output too
+extension/dashboard/
 
 # TypeScript incremental build state
 **/*.tsbuildinfo

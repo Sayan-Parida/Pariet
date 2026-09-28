@@ -4,12 +4,13 @@ import {
   ChevronLeft, 
   ChevronRight, 
   Trash2,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import { Session, SessionStatus } from '../types';
 import { apiClient } from '../api/client';
 import { sanitizeSessions } from '../api/sanitize';
-import { researchStore } from '../api/researchStore';
+import { dataEvents } from '../api/dataEvents';
 import { shortcutLabel } from '../utils/platform';
 
 const formatArchiveDate = (value: string | undefined) => {
@@ -60,7 +61,7 @@ export default function SessionList({
 
   useEffect(() => {
     fetchSessions();
-    const unsubscribe = researchStore.subscribe(() => {
+    const unsubscribe = dataEvents.subscribe(() => {
       fetchSessions();
     });
     return () => {
@@ -75,7 +76,7 @@ export default function SessionList({
       await apiClient.deleteSession(id);
       setDeleteError(null);
       setSessions(prev => prev.filter(s => s.id !== id));
-      researchStore.deleteSession(id);
+      dataEvents.notify();
       if (selectedSessionId === id) {
         const remaining = sessions.filter(s => s.id !== id);
         onSelectSession(remaining.length > 0 ? remaining[0].id : null);
@@ -114,7 +115,8 @@ export default function SessionList({
       await apiClient.deleteAllData();
       setSessions([]);
       onSelectSession(null);
-      researchStore.clearAll();
+      dataEvents.clearCache();
+      dataEvents.notify();
       setDeleteError(null);
     } catch {
       setDeleteError('Could not delete local data.');
@@ -358,14 +360,15 @@ export default function SessionList({
             <Trash2 className="w-4 h-4" />
           </button>
           <button
-            aria-label="Reset"
+            aria-label="Refresh"
+            title="Refresh archive"
             onClick={() => {
-              if (window.confirm('Reset sample research graphs?')) {
-                researchStore.resetToDefault();
-              }
+              setSessions([]);
+              fetchSessions();
             }}
-            className="uppercase tracking-[0.1em] border border-[var(--surface-base)] px-1.5 py-px hover:bg-[var(--surface-base)] hover:text-[var(--border-strong)] transition-colors"
+            className="w-6 h-6 flex items-center justify-center border border-transparent hover:border-[var(--surface-base)] transition-colors"
           >
+            <RefreshCw className="w-4 h-4" />
           </button>
         </div>
       </div>

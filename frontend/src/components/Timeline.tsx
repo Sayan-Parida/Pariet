@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { TimelineEntry } from '../types';
 import { apiClient } from '../api/client';
-import { researchStore } from '../api/researchStore';
+import { dataEvents } from '../api/dataEvents';
 
 interface Props {
   sessionId: string;
@@ -38,7 +38,7 @@ export default function Timeline({ sessionId, onJumpToNode }: Props) {
 
   useEffect(() => {
     fetchTimeline();
-    const unsubscribe = researchStore.subscribe(() => {
+    const unsubscribe = dataEvents.subscribe(() => {
       fetchTimeline();
     });
     return () => {

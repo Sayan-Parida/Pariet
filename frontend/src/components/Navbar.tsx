@@ -49,15 +49,12 @@ export default function Navbar({
       <div className="flex items-center gap-2.5 min-w-0">
         <div className="flex items-center gap-2 shrink-0">
           <img
-            src="/pariet-logo.png"
+            src="./pariet-logo.png"
             alt="Pariet logo"
             className="w-7 h-7 shrink-0 object-contain"
           />
           <span className="font-display text-base font-bold tracking-tight leading-none text-[var(--text-primary)]">
             Pariet
-          </span>
-          <span className="hidden md:inline-flex font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--text-faint)] border-[1.5px] border-[var(--border-medium)] px-1 py-0.5 rounded-[var(--radius-xs)]">
-            ResearchLab
           </span>
         </div>
 

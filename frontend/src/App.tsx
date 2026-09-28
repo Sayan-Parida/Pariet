@@ -14,7 +14,7 @@ import ShortcutsModal from './components/ShortcutsModal';
 import ResumePanel from './components/ResumePanel';
 import { Session } from './types';
 import { apiClient } from './api/client';
-import { researchStore } from './api/researchStore';
+import { dataEvents } from './api/dataEvents';
 
 const formatSessionDate = (value: string) => new Intl.DateTimeFormat(undefined, {
   month: 'short',
@@ -55,7 +55,7 @@ const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   useEffect(() => {
     loadSessions();
-    const unsubscribe = researchStore.subscribe(() => {
+    const unsubscribe = dataEvents.subscribe(() => {
       loadSessions();
     });
     return () => {

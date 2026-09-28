@@ -9,7 +9,8 @@ const getShortcuts = () => [
   { key: shortcutLabel('K'), description: 'Focus command search bar' },
   { key: shortcutLabel('B'), description: 'Toggle left workspace sidebar' },
   { key: 'F', description: 'Fit research graph to screen' },
-  { key: 'Space + Drag', description: 'Pan knowledge graph canvas' },
+  { key: 'Drag', description: 'Move the map around (start on empty space)' },
+  { key: 'Hold Space, then drag', description: 'Move the map when starting on a node' },
   { key: 'Scroll Wheel', description: 'Zoom in / zoom out' }
 ];
 

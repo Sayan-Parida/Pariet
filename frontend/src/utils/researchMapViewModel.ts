@@ -19,6 +19,12 @@ export interface ProjectedEdge {
   source: string;
   target: string;
   relationship: 'SEARCH_TO_SOURCE' | 'SOURCE_TO_SOURCE' | 'SEARCH_TO_SEARCH';
+  /**
+   * Human-readable relationship, e.g. "Opened from this search". Carried from
+   * the backend edge label so the detail panel can describe the link instead
+   * of falling back to a generic "relates to".
+   */
+  label: string;
 }
 
 export interface ProjectedGraph {
@@ -129,14 +135,28 @@ export function buildResearchMapProjection(
   const projectedEdges: ProjectedEdge[] = [];
   const edgeIdSet = new Set<string>();
 
-  const addEdge = (source: string, target: string, relationship: ProjectedEdge['relationship']) => {
+  // Human-readable labels for the projected relationship types. The backend's
+  // own edge label is preferred when present, but the projection can also
+  // merge or re-point edges, so a stable per-type label is the fallback.
+  const DEFAULT_EDGE_LABEL: Record<ProjectedEdge['relationship'], string> = {
+    SEARCH_TO_SOURCE: 'Opened from this search',
+    SEARCH_TO_SEARCH: 'Followed by this search',
+    SOURCE_TO_SOURCE: 'Navigated to this page'
+  };
+
+  const addEdge = (
+    source: string,
+    target: string,
+    relationship: ProjectedEdge['relationship'],
+    label?: string
+  ) => {
     const id = `${relationship}:${source}->${target}`;
     if (edgeIdSet.has(id)) return;
     if (relationship === 'SEARCH_TO_SEARCH') {
       if (!validSearchIds.has(source) || !validSearchIds.has(target)) return;
       if (source === target) return;
       edgeIdSet.add(id);
-      projectedEdges.push({ id, source, target, relationship });
+      projectedEdges.push({ id, source, target, relationship, label: label || DEFAULT_EDGE_LABEL[relationship] });
       return;
     }
     if (!validSearchIds.has(source) && relationship === 'SEARCH_TO_SOURCE') return;
@@ -144,7 +164,7 @@ export function buildResearchMapProjection(
     if (!validSourceIds.has(source) && !validSearchIds.has(source)) return;
     if (!validSourceIds.has(target)) return;
     edgeIdSet.add(id);
-    projectedEdges.push({ id, source, target, relationship });
+    projectedEdges.push({ id, source, target, relationship, label: label || DEFAULT_EDGE_LABEL[relationship] });
   };
 
   if (sessionNode) {
@@ -185,22 +205,27 @@ export function buildResearchMapProjection(
   for (const edge of rawEdges) {
     const rel = edge.relationship;
 
+    // The backend sends its human-readable edge text in `description`.
     if (rel === 'RESULTS_IN') {
       const canonicalSource = canonicalSearchId.get(edge.source);
-      if (canonicalSource) addEdge(canonicalSource, edge.target, 'SEARCH_TO_SOURCE');
+      if (canonicalSource) addEdge(canonicalSource, edge.target, 'SEARCH_TO_SOURCE', edge.description);
     }
 
     if (NAVIGATION_RELATIONSHIPS.includes(rel)) {
       if (validSourceIds.has(edge.source) && validSourceIds.has(edge.target)) {
-        addEdge(edge.source, edge.target, 'SOURCE_TO_SOURCE');
+        addEdge(edge.source, edge.target, 'SOURCE_TO_SOURCE', edge.description);
       }
+      // Edges that pass through a hidden node (a search-results page) are
+      // dropped rather than bridged. Bridging them invents a direct link
+      // between two pages the user never moved between, and that clutter made
+      // the map much harder to read.
     }
 
     if (rel === 'SEARCH_TO_SEARCH') {
       const canonicalSource = canonicalSearchId.get(edge.source);
       const canonicalTarget = canonicalSearchId.get(edge.target);
       if (canonicalSource && canonicalTarget) {
-        addEdge(canonicalSource, canonicalTarget, 'SEARCH_TO_SEARCH');
+        addEdge(canonicalSource, canonicalTarget, 'SEARCH_TO_SEARCH', edge.description);
       }
     }
 

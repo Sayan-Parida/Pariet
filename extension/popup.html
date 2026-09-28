@@ -231,6 +231,52 @@
 
     .action-row .action-btn { flex: 1; }
 
+    /* Support / report an issue */
+    .support {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 2px solid var(--border-strong);
+    }
+
+    .support-btn {
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      box-shadow: none;
+    }
+
+    .support-btn:hover { box-shadow: 2px 2px 0 var(--shadow-ink); }
+
+    .support-line {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      margin-top: 6px;
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 9px;
+      color: var(--text-muted);
+    }
+
+    .support-email {
+      color: var(--text-primary);
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      user-select: all;
+    }
+
+    .support-email:hover { color: var(--accent); }
+
+    .support-note {
+      margin-top: 5px;
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 8px;
+      line-height: 1.4;
+      color: var(--text-muted);
+    }
+
     .hidden { display: none; }
   </style>
 </head>
@@ -271,6 +317,16 @@
 
   <div class="action-row">
     <button id="dashboard-btn" class="btn btn--outline action-btn">OPEN PARIET</button>
+  </div>
+
+  <div class="support">
+    <button id="report-btn" class="btn btn--outline support-btn">REPORT AN ISSUE</button>
+    <div class="meta meta--hidden" id="report-note"></div>
+      <div class="support-line">
+        <span>or email</span>
+        <span id="support-email" class="support-email" title="Click to copy"></span>
+      </div>
+      <div class="support-note">Opens Gmail in a new tab. Nothing is sent automatically.</div>
   </div>
 
   <script src="popup.js"></script>

@@ -1,27 +1,82 @@
-import { api } from './api';
-import { BrowserEventRequest, SessionState, QueuedEvent, BackendStatus, EventType } from './types';
+import { BrowserEventRequest, SessionState } from './types';
+import { ingestEvent, DuplicateEventError } from './store/ingest';
+import { createSession, endSession, getSession, deleteSession, deleteAllData,
+         listSessions, getPositions, savePositions } from './store/sessions';
+import { getMindMap, getPageViews, getSearchViews, getTimeline, getResumePoint } from './store/api';
+import { isResearchUrl } from './store/urls';
+import type { ParietRequest, ParietResponse } from './messages';
 
-// Constants
-const QUEUE_LIMIT = 1000;
-
-// Initialize state if missing
+// Session bookkeeping lives in chrome.storage.local because the service worker
+// needs it synchronously at event time. The research data itself lives in
+// IndexedDB (see store/).
 async function initState() {
-  const data = await chrome.storage.local.get(['sessionState', 'eventQueue', 'backendStatus', 'preExistingTabIds']);
+  const data = await chrome.storage.local.get(['sessionState', 'preExistingTabIds']);
+  const patch: Record<string, unknown> = {};
   if (!data.sessionState) {
-    await chrome.storage.local.set({ sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState });
-  }
-  if (!data.eventQueue) {
-    await chrome.storage.local.set({ eventQueue: [] as QueuedEvent[] });
-  }
-  if (!data.backendStatus) {
-    await chrome.storage.local.set({ backendStatus: { connected: false, lastCheck: Date.now() } as BackendStatus });
+    patch.sessionState = { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState;
   }
   if (!data.preExistingTabIds) {
-    await chrome.storage.local.set({ preExistingTabIds: [] as number[] });
+    patch.preExistingTabIds = [] as number[];
+  }
+  if (Object.keys(patch).length > 0) {
+    await chrome.storage.local.set(patch);
   }
 }
 
 initState();
+
+/**
+ * End the active session.
+ *
+ * A session belongs to one window, so it ends the moment that window closes.
+ * The service worker is single-threaded and the write is a local transaction,
+ * so unlike a network call this completes even while Chrome is shutting down.
+ */
+async function endActiveSession(reason: string, endedAtMs?: number): Promise<boolean> {
+  const data = await chrome.storage.local.get(['sessionState']);
+  const sessionState: SessionState | undefined = data.sessionState;
+  if (!sessionState?.isActive || !sessionState.sessionId) return true;
+
+  try {
+    await endSession(sessionState.sessionId, endedAtMs);
+    await chrome.storage.local.set({
+      sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
+      preExistingTabIds: []
+    });
+    console.log(`Ended session ${sessionState.sessionId} (${reason})`);
+    return true;
+  } catch (error) {
+    console.error(`Could not end session ${sessionState.sessionId} (${reason})`, error);
+    return false;
+  }
+}
+
+/**
+ * Safety net for a full browser quit.
+ *
+ * Chrome may terminate the worker before the window-close handler runs, so on
+ * every start we close any session left over from a previous browser run.
+ */
+async function reconcileLeftoverSession() {
+  const data = await chrome.storage.local.get(['sessionState']);
+  const sessionState: SessionState | undefined = data.sessionState;
+  if (!sessionState?.isActive || !sessionState.sessionId) return;
+  await endActiveSession('leftover from a previous browser run', sessionState.startedAt ?? undefined);
+}
+
+// The session's window is what defines the session, so closing it ends the
+// session immediately. This covers closing the research window and quitting
+// Chrome, since quitting removes every window.
+chrome.windows.onRemoved.addListener((windowId) => {
+  chrome.storage.local.get(['sessionState']).then(async (data) => {
+    const sessionState: SessionState | undefined = data.sessionState;
+    if (!sessionState?.isActive || sessionState.windowId == null) return;
+    if (sessionState.windowId !== windowId) return;
+    await endActiveSession('session window closed');
+  }).catch((e) => console.warn('Window close handler failed', e));
+});
+
+reconcileLeftoverSession().catch((e) => console.warn('Session reconcile failed', e));
 
 // Window isolation rule: a Research Session belongs to the Chrome window
 // where it was started. Only events carrying that windowId may be
@@ -79,129 +134,39 @@ async function processEvent(event: BrowserEventRequest) {
   if (shouldAttributeSession) {
     event.sessionId = sessionState.sessionId;
   }
-  
-  const success = await api.sendEvent(event);
-  
-  if (success) {
-    await updateBackendStatus(true);
-    flushQueue();
-  } else {
-    const queue: QueuedEvent[] = data.eventQueue || [];
-    if (queue.length < QUEUE_LIMIT) {
-      queue.push({ event, retryCount: 0 });
-      await chrome.storage.local.set({ eventQueue: queue });
-    }
-    await updateBackendStatus(false);
-  }
-}
 
-async function flushQueue() {
-  const data = await chrome.storage.local.get(['eventQueue', 'sessionState', 'preExistingTabIds']);
-  let queue: QueuedEvent[] = data.eventQueue || [];
-  const sessionState: SessionState = data.sessionState;
-  const preExistingTabIds: number[] = data.preExistingTabIds || [];
-  
-  if (queue.length === 0) return;
-
-  const failedEvents: number[] = [];
-
-  // Queue draining is re-evaluated against current state: events queued while
-  // a session was active are dropped if the session has since ended, so a
-  // delayed flush cannot attribute activity to a closed session.
-  if (!sessionState?.isActive || !sessionState?.sessionId) {
-    await chrome.storage.local.set({ eventQueue: [] });
-    return;
-  }
-
-  for (let i = 0; i < queue.length; i++) {
-    const queuedEvent = queue[i].event;
-    let shouldAttributeSession = false;
-    
-    if (windowMatchesSession(sessionState, queuedEvent)) {
-      const isPreExistingTab = preExistingTabIds.includes(queuedEvent.tabId);
-      
-      if (!isPreExistingTab) {
-        shouldAttributeSession = true;
-      } else if (queuedEvent.eventType === 'NAVIGATION') {
-        shouldAttributeSession = true;
-        const updatedPreExisting = preExistingTabIds.filter(id => id !== queuedEvent.tabId);
-        await chrome.storage.local.set({ preExistingTabIds: updatedPreExisting });
-      }
-    }
-    
-    if (shouldAttributeSession && sessionState.sessionId) {
-      queuedEvent.sessionId = sessionState.sessionId;
-    }
-    
-    const success = await api.sendEvent(queuedEvent);
-    if (!success) {
-      failedEvents.push(i);
-    }
-  }
-
-  if (failedEvents.length < queue.length) {
-    queue = queue.filter((_, idx) => failedEvents.includes(idx));
-    await chrome.storage.local.set({ eventQueue: queue });
-  }
-}
-
-async function updateBackendStatus(connected: boolean) {
-  await chrome.storage.local.set({
-    backendStatus: { connected, lastCheck: Date.now() }
-  });
-}
-
-// Alarms for periodic tasks
-chrome.alarms.create('flushQueue', { periodInMinutes: 0.5 }); // 30 seconds
-chrome.alarms.create('healthCheck', { periodInMinutes: 0.5 }); // 30 seconds
-
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'flushQueue') {
-    flushQueue();
-  } else if (alarm.name === 'healthCheck') {
-    const isHealthy = await api.checkHealth();
-    const data = await chrome.storage.local.get(['backendStatus']);
-    const wasConnected = data.backendStatus?.connected;
-    
-    await updateBackendStatus(isHealthy);
-    
-    if (isHealthy && !wasConnected) {
-      flushQueue();
-    }
-  }
-});
-
-// Only real web pages are recorded. This rejects internal browser pages
-// (chrome://, chrome-extension://, about:, edge://, view-source:, file: and
-// anything else) so they never reach the database. Previously some listeners
-// only filtered when a URL happened to be present, letting chrome:// URLs in.
-function isTrackableUrl(url: string | undefined | null): url is string {
-  if (!url) return false;
-  if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) return false;
-  if (url.startsWith('about:') || url.startsWith('edge://')) return false;
-  if (url.startsWith('devtools://') || url.startsWith('view-source:')) return false;
-  if (url.startsWith('file:') || url.startsWith('data:') || url.startsWith('javascript:')) return false;
-  if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
-  // Pariet's own dashboard and API are tool surfaces, not research. Viewing the
-  // dashboard mid-session must not create nodes in the graph being recorded.
-  if (isOwnAppUrl(url)) return false;
-  return true;
-}
-
-/** True for the Pariet frontend (5173) and backend (8080), on loopback only. */
-function isOwnAppUrl(url: string): boolean {
+  // Recorded straight into IndexedDB on the user's device. There is no server
+  // to reach, so a write is a write: no queue, no health check, nothing to
+  // retry. A failure is surfaced rather than silently dropped.
   try {
-    const parsed = new URL(url);
-    const isLoopback =
-      parsed.hostname === 'localhost' ||
-      parsed.hostname === '127.0.0.1' ||
-      parsed.hostname === '::1' ||
-      parsed.hostname === '[::1]';
-    return isLoopback && (parsed.port === '5173' || parsed.port === '8080' || parsed.port === '');
-  } catch {
-    return false;
+    await ingestEvent({
+      eventType: event.eventType,
+      url: event.url ?? null,
+      title: event.title ?? null,
+      tabId: event.tabId,
+      windowId: event.windowId ?? null,
+      transitionType: event.transitionType ?? null,
+      referrerUrl: event.referrerUrl ?? null,
+      openerTabId: event.openerTabId ?? null,
+      sourceTabId: event.sourceTabId ?? null,
+      timestamp: event.timestamp,
+      sessionId: event.sessionId ?? null,
+      pageVisitId: null
+    });
+  } catch (error) {
+    // A replayed event is expected and harmless.
+    if (error instanceof DuplicateEventError) return;
+    console.error('Failed to record event', error);
   }
 }
+
+// There is no server to be offline from, so no queue and no health check.
+// The service worker only needs to run when Chrome wakes it.
+
+// Only real web pages are recorded. This rejects internal browser pages and
+// Pariet's own surfaces, so they never reach the local database. It delegates
+// to the shared rule in store/urls.ts so capture and storage cannot disagree.
+const isTrackableUrl = isResearchUrl;
 
 // Helper to check incognito
 async function isIncognito(tabId: number): Promise<boolean> {
@@ -343,78 +308,120 @@ async function restoreTabs(urls: string[], focusUrl: string | null): Promise<{ o
   }
 }
 
-// Messages from popup
+/** The dashboard's API, served from IndexedDB. */
+async function handleDashboardRequest(request: ParietRequest): Promise<unknown> {
+  switch (request.type) {
+    case 'LIST_SESSIONS':
+      return listSessions();
+    case 'GET_MINDMAP':
+      return getMindMap(request.sessionId);
+    case 'GET_PAGES':
+      return getPageViews(request.sessionId);
+    case 'GET_SEARCHES':
+      return getSearchViews(request.sessionId);
+    case 'GET_TIMELINE':
+      return getTimeline(request.sessionId);
+    case 'GET_RESUME_POINT':
+      return getResumePoint(request.sessionId);
+    case 'DELETE_SESSION':
+      await deleteSession(request.sessionId);
+      return null;
+    case 'DELETE_ALL_DATA':
+      await deleteAllData();
+      await chrome.storage.local.set({
+        sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
+        preExistingTabIds: []
+      });
+      return null;
+    case 'GET_POSITIONS':
+      return getPositions(request.sessionId);
+    case 'SAVE_POSITIONS':
+      await savePositions(request.sessionId, request.positions);
+      return null;
+    case 'RESTORE_TABS':
+      return restoreTabs(request.urls, request.focusUrl);
+    case 'GET_EXTENSION_STATUS':
+      return { ready: true, storage: 'indexeddb' };
+    default:
+      throw new Error('Unknown request');
+  }
+}
+
+/** Request types handled by the dashboard API rather than the popup. */
+const DASHBOARD_REQUESTS = new Set<ParietRequest['type']>([
+  'LIST_SESSIONS', 'GET_MINDMAP', 'GET_PAGES', 'GET_SEARCHES', 'GET_TIMELINE',
+  'GET_RESUME_POINT', 'GET_POSITIONS', 'GET_EXTENSION_STATUS',
+  'DELETE_SESSION', 'DELETE_ALL_DATA', 'SAVE_POSITIONS', 'RESTORE_TABS'
+]);
+
+// Messages from the popup and dashboard
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Dashboard API. Checked first because its requests share the GET_ prefix.
+  if (message && DASHBOARD_REQUESTS.has(message.type)) {
+    handleDashboardRequest(message as ParietRequest)
+      .then((data) => sendResponse({ ok: true, data } satisfies ParietResponse))
+      .catch((error) => sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : 'Request failed'
+      } satisfies ParietResponse));
+    return true;
+  }
+
   if (message.type === 'GET_STATE') {
-    chrome.storage.local.get(['sessionState', 'backendStatus', 'eventQueue', 'preExistingTabIds']).then(data => {
+    chrome.storage.local.get(['sessionState', 'preExistingTabIds']).then(data => {
       sendResponse({
         sessionState: data.sessionState,
-        backendStatus: data.backendStatus,
-        queueLength: (data.eventQueue || []).length,
+        // There is no server, so the extension is always "connected" to its own
+        // local store. The indicator now means "storage is ready".
+        backendStatus: { connected: true, lastCheck: Date.now() },
+        queueLength: 0,
         preExistingTabCount: (data.preExistingTabIds || []).length
       });
     });
     return true; // keep channel open
   } else if (message.type === 'START_SESSION') {
-    // Async bootstrap: the session belongs to the currently focused window.
-    // Events from any other window must never be attributed to it
-    // (see windowMatchesSession).
+    // The session belongs to the currently focused window. Events from any
+    // other window must never be attributed to it (see windowMatchesSession).
     (async () => {
       const focusedWindow = await chrome.windows.getLastFocused().catch(() => null);
       const sessionWindowId: number | null =
         focusedWindow && focusedWindow.id != null ? focusedWindow.id : null;
-    api.createSession(message.title, sessionWindowId).then(async (id) => {
-      if (id) {
-        // Capture currently open tabs in the session window as pre-existing (they should NOT be attributed to the new session
-        // unless the user actively navigates in them after session start)
-        const tabs = await chrome.tabs.query(sessionWindowId != null ? { windowId: sessionWindowId } : {});
-        const preExistingTabIds = tabs
-          .filter(tab => !tab.incognito)
-          .filter(tab => tab.url != null && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://') && !tab.url.startsWith('about:'))
-          .map(tab => tab.id!);
-        
-        await chrome.storage.local.set({ 
-          sessionState: { sessionId: id, sessionTitle: message.title, isActive: true, windowId: sessionWindowId } as SessionState,
-          preExistingTabIds
-        });
-        sendResponse({ success: true, preExistingTabCount: preExistingTabIds.length });
-      } else {
-        sendResponse({ success: false });
-      }
+
+      const session = await createSession(message.title ?? null, sessionWindowId);
+
+      // Tabs already open in the session window are pre-existing: they are not
+      // attributed to the new session unless the user navigates in them.
+      const tabs = await chrome.tabs.query(sessionWindowId != null ? { windowId: sessionWindowId } : {});
+      const preExistingTabIds = tabs
+        .filter(tab => !tab.incognito)
+        .filter(tab => isResearchUrl(tab.url))
+        .map(tab => tab.id!);
+
+      await chrome.storage.local.set({
+        sessionState: {
+          sessionId: session.id,
+          sessionTitle: message.title,
+          isActive: true,
+          windowId: sessionWindowId,
+          startedAt: Date.now()
+        } as SessionState,
+        preExistingTabIds
       });
-    })();
-    return true;
-  } else if (message.type === 'END_SESSION') {
-    chrome.storage.local.get(['sessionState']).then(async data => {
-      const sessionId = data.sessionState?.sessionId;
-      if (sessionId) {
-        const success = await api.endSession(sessionId);
-        if (success) {
-          await chrome.storage.local.set({ 
-            sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
-            preExistingTabIds: []
-          });
-        } else {
-          console.error(`Failed to end session ${sessionId}; preserving local session state`);
-        }
-        sendResponse({ success });
-        return;
-      }
-      sendResponse({ success: true });
+      sendResponse({ success: true, sessionId: session.id, preExistingTabCount: preExistingTabIds.length });
+    })().catch((error) => {
+      console.error('Failed to start session', error);
+      sendResponse({ success: false, error: error instanceof Error ? error.message : 'Failed to start session' });
     });
     return true;
-  } else if (message.type === 'RESTORE_TABS') {
-    restoreTabs(message.urls || [], message.focusUrl ?? null).then((response) => sendResponse(response));
+  } else if (message.type === 'END_SESSION') {
+    endActiveSession('ended by user')
+      .then((ok) => sendResponse({ success: ok }))
+      .catch(() => sendResponse({ success: false }));
     return true;
   } else if (message.type === 'CLEAR_SESSION_STATE') {
-    chrome.storage.local.set({ 
+    chrome.storage.local.set({
       sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
       preExistingTabIds: []
-    }).then(() => sendResponse({ success: true }));
-    return true;
-  } else if (message.type === 'SET_SESSION_STATE') {
-    chrome.storage.local.set({
-      sessionState: { sessionId: message.sessionId, sessionTitle: message.sessionTitle ?? null, isActive: true, windowId: message.windowId ?? null } as SessionState
     }).then(() => sendResponse({ success: true }));
     return true;
   }

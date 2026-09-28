@@ -5,8 +5,7 @@ module.exports = {
   mode: 'production',
   entry: {
     background: './src/background.ts',
-    popup: './src/popup.ts',
-    content: './src/content.ts'
+    popup: './src/popup.ts'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -30,7 +29,10 @@ module.exports = {
       patterns: [
         { from: 'manifest.json', to: '.' },
         { from: 'popup.html', to: '.' },
-        { from: 'icons', to: 'icons' }
+        { from: 'icons', to: 'icons' },
+        // The dashboard is built by Vite into extension/dashboard, then
+        // shipped inside the extension so the whole tool is one install.
+        { from: 'dashboard', to: 'dashboard', noErrorOnMissing: true }
       ]
     })
   ]

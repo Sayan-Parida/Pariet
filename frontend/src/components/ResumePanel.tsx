@@ -3,8 +3,6 @@ import { History, MapPinned } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { PageVisit, ResumePoint } from '../types';
 import { buildRestorePlan } from '../utils/restoreWorkspace';
-import { isExtensionAvailable, restoreTabsViaExtension } from '../api/extensionBridge';
-
 interface Props {
   sessionId: string;
   onViewPath: (nodeId: string) => void;
@@ -79,19 +77,13 @@ export default function ResumePanel({ sessionId, onViewPath }: Props) {
       return;
     }
     setStatus({ kind: 'restoring' });
-    const available = await isExtensionAvailable();
-    if (!available) {
+    // The dashboard ships inside the extension, so the service worker is
+    // always there to reopen the tabs.
+    try {
+      const count = await apiClient.restoreTabs(plan.urls, plan.focusUrl);
+      setStatus({ kind: 'restored', count: count || pagesReady });
+    } catch {
       setStatus({ kind: 'extension-required' });
-      return;
-    }
-    const result = await restoreTabsViaExtension(plan.urls, plan.focusUrl);
-    if (result.ok) {
-      setStatus({ kind: 'restored', count: result.count ?? pagesReady });
-    } else if (result.error === 'TRAK_EXTENSION_UNAVAILABLE') {
-      setStatus({ kind: 'extension-required' });
-      return;
-    } else {
-      setStatus({ kind: 'failed' });
     }
   };
 
