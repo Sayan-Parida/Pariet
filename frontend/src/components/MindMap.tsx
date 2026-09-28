@@ -317,6 +317,21 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     };
   }, [loadGraph, sessionId]);
 
+  // Keep the map current while a session is still running, so pages and
+  // searches captured a moment ago appear without a manual reload. Polling
+  // stops as soon as the session is no longer ACTIVE; loadGraph already
+  // preserves saved node positions, so a refresh does not disturb the layout.
+  const isSessionActive = session?.status === 'ACTIVE';
+  useEffect(() => {
+    if (!isSessionActive) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadGraph();
+      }
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [isSessionActive, loadGraph]);
+
   const handleViewportChange = useCallback(() => {
     const currentZoom = getZoom();
     if (currentZoom) setZoomLevel(currentZoom);

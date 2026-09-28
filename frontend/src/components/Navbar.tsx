@@ -71,9 +71,6 @@ export default function Navbar({
               <span className="text-[13px] text-[var(--text-secondary)] font-semibold truncate max-w-[140px] sm:max-w-[220px]">
                 {activeSession.title}
               </span>
-              <span 
-                className={`b-live shrink-0 ${activeSession.status === 'ACTIVE' ? 'b-live--on' : ''}`}
-              />
             </div>
           </>
         )}

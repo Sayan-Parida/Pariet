@@ -63,6 +63,29 @@ const [isSearchOpen, setIsSearchOpen] = useState(false);
     };
   }, [loadSessions]);
 
+  // A session started or ended from the extension must be reflected here
+  // without a manual reload, otherwise the status badge keeps showing a stale
+  // COMPLETED and its indicator never turns green. Poll while any session is
+  // running, and back off to a slow poll when everything is settled.
+  const hasActiveSession = sessions.some((s) => s.status === 'ACTIVE');
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      // Skip refreshes while the tab is hidden; resume promptly on return.
+      if (document.visibilityState === 'visible') {
+        loadSessions();
+      }
+    }, hasActiveSession ? 4000 : 15000);
+    return () => window.clearInterval(interval);
+  }, [loadSessions, hasActiveSession]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadSessions();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadSessions]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
