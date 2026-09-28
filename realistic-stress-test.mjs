@@ -12,10 +12,14 @@
   links so that Chrome records transitionType="link" for result navigations.
 
   Requirements:
-    - Node.js with puppeteer-core installed (npm install puppeteer-core)
+    - Node.js with puppeteer-core installed (npm install)
     - Chrome running with remote debugging (DevToolsActivePort present)
-    - Pariet extension loaded in that Chrome instance
-    - Backend running at http://localhost:8080
+    - Pariet extension loaded in that Chrome instance, with a session started
+      from the popup
+
+  Note: nothing needs to be running server-side. The extension records the
+  activity into its own local store as it happens, so this script only has to
+  produce realistic browsing for the extension to observe.
 
   Usage:
     node realistic-stress-test.mjs
@@ -262,13 +266,13 @@ async function main() {
   console.log('    Extension ID  :', extId);
   console.log('    Service worker:', swTarget.url());
 
-  // Get or create a test page
-  let testPage = pages.find((p) => p.url().startsWith('http://localhost:5173'));
+  // Use a normal page, never the dashboard: the extension deliberately does
+  // not record its own pages, and Pariet needs a real page to research from.
+  let testPage = pages.find((p) =>
+    !p.url().startsWith('chrome-extension://') && !p.url().startsWith('chrome://')
+  );
   if (!testPage) {
-    testPage = pages[pages.length - 1];
-    if (!testPage || testPage.url().startsWith('chrome://')) {
-      testPage = await browser.newPage();
-    }
+    testPage = await browser.newPage();
   }
   console.log('  Navigation tab:', testPage.url());
 
