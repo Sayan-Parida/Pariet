@@ -79,11 +79,59 @@ public class PageVisitService {
         }
     }
 
+    /**
+     * Whether a URL counts as research activity worth recording.
+     *
+     * <p>Excludes browser-internal pages, and Pariet's own surfaces: the
+     * dashboard ({@code localhost:5173}) and the API ({@code localhost:8080}).
+     * Those are tool surfaces, not research, so opening the dashboard while a
+     * session is running must never add nodes to the graph being recorded.
+     *
+     * <p>Only loopback hosts on those ports are excluded, so genuinely
+     * research-relevant local URLs (for example a dev server on another port)
+     * are still captured.
+     */
     public static boolean isResearchUrl(String url) {
-        return url != null && !url.isBlank()
-                && !url.startsWith("chrome://")
-                && !url.startsWith("chrome-extension://")
-                && !url.startsWith("about:");
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        if (url.startsWith("chrome://")
+                || url.startsWith("chrome-extension://")
+                || url.startsWith("about:")
+                || url.startsWith("edge://")
+                || url.startsWith("devtools://")
+                || url.startsWith("view-source:")
+                || url.startsWith("file:")
+                || url.startsWith("data:")
+                || url.startsWith("javascript:")) {
+            return false;
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            return false;
+        }
+        return !isOwnAppUrl(url);
+    }
+
+    /** True for Pariet's own frontend/backend on loopback. */
+    static boolean isOwnAppUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            if (host == null) {
+                return false;
+            }
+            boolean loopback = "localhost".equalsIgnoreCase(host)
+                    || "127.0.0.1".equals(host)
+                    || "::1".equals(host)
+                    || "[::1]".equals(host);
+            if (!loopback) {
+                return false;
+            }
+            int port = uri.getPort();
+            return port == -1 || port == 5173 || port == 8080;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     @Transactional

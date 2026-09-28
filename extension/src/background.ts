@@ -181,7 +181,26 @@ function isTrackableUrl(url: string | undefined | null): url is string {
   if (url.startsWith('about:') || url.startsWith('edge://')) return false;
   if (url.startsWith('devtools://') || url.startsWith('view-source:')) return false;
   if (url.startsWith('file:') || url.startsWith('data:') || url.startsWith('javascript:')) return false;
-  return url.startsWith('http://') || url.startsWith('https://');
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
+  // Pariet's own dashboard and API are tool surfaces, not research. Viewing the
+  // dashboard mid-session must not create nodes in the graph being recorded.
+  if (isOwnAppUrl(url)) return false;
+  return true;
+}
+
+/** True for the Pariet frontend (5173) and backend (8080), on loopback only. */
+function isOwnAppUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const isLoopback =
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '127.0.0.1' ||
+      parsed.hostname === '::1' ||
+      parsed.hostname === '[::1]';
+    return isLoopback && (parsed.port === '5173' || parsed.port === '8080' || parsed.port === '');
+  } catch {
+    return false;
+  }
 }
 
 // Helper to check incognito
