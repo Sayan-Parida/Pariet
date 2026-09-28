@@ -96,10 +96,6 @@ export const apiClient = {
     researchStore.clearAll();
   },
 
-  getDataRetention: async (): Promise<{ eventDays: number; sessionDays: number; pruneHourUtc: string }> => {
-    return fetchJson<{ eventDays: number; sessionDays: number; pruneHourUtc: string }>('/api/sessions/data-retention');
-  },
-
   getTimeline: async (id: string): Promise<TimelineEntry[]> => {
     try {
       return await fetchJson<TimelineEntry[]>(`/api/sessions/${id}/timeline`);

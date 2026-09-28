@@ -1,7 +1,5 @@
 package com.trak.service;
 
-import com.trak.domain.model.PageVisit;
-import com.trak.domain.model.ResearchSession;
 import com.trak.domain.repository.BrowserEventRepository;
 import com.trak.domain.repository.PageVisitRepository;
 import com.trak.domain.repository.ResearchSessionRepository;
@@ -14,21 +12,17 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 
 /**
- * Retention and erasure of locally stored browsing data.
+ * Erasure of locally stored browsing data.
  *
- * <p>Two guarantees are implemented here:
- * <ul>
- *   <li><b>Retention</b> - data older than a configurable window is pruned
- *       daily, so the database cannot grow without bound.</li>
- *   <li><b>Erasure</b> - {@link #deleteAllData()} removes every stored URL,
- *       search, event and session, including unattributed events, and reclaims
- *       the file space so the data is not merely unlinked.</li>
- * </ul>
+ * <p>There is no automatic retention: nothing is pruned on a schedule, because
+ * the archive is the user's research record and only the user decides what to
+ * discard. The single guarantee here is that when they do decide,
+ * {@link #deleteAllData()} removes every stored URL, search, event and
+ * session, including unattributed events, and reclaims the file space so the
+ * data is not merely unlinked.
  *
  * <p>Erasure correctness relies on {@code PRAGMA secure_delete=ON} (applied to
  * every pooled connection via
@@ -41,7 +35,6 @@ public class DataLifecycleService {
 
     private static final Logger log = LoggerFactory.getLogger(DataLifecycleService.class);
     private static final String INDEX_TABLE = "research_search_index";
-    private static final String ACTIVE_STATUS = "ACTIVE";
 
     private final ResearchSessionRepository sessionRepository;
     private final BrowserEventRepository eventRepository;
@@ -65,61 +58,6 @@ public class DataLifecycleService {
         this.searchIndexService = searchIndexService;
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
-    }
-
-    /**
-     * Prune data past its retention window.
-     *
-     * <p>Order matters: child rows are removed before their session, and the
-     * full-text index is updated for exactly the rows that disappear so it
-     * cannot keep serving erased URLs and queries.
-     *
-     * @param eventRetention   how long raw events, pages and searches are kept
-     * @param sessionRetention how long finished sessions are kept
-     * @param now              evaluation time (injected for deterministic tests)
-     * @return per-table row counts removed
-     */
-    public RetentionReport pruneExpiredData(Duration eventRetention, Duration sessionRetention, Instant now) {
-        return transactionTemplate.execute(status ->
-                pruneExpiredDataInTransaction(eventRetention, sessionRetention, now));
-    }
-
-    @Transactional
-    RetentionReport pruneExpiredDataInTransaction(Duration eventRetention, Duration sessionRetention, Instant now) {
-        Instant eventCutoff = now.minus(eventRetention);
-        Instant sessionCutoff = now.minus(sessionRetention);
-
-        // Capture the rows that are about to disappear so their full-text index
-        // entries can be dropped too. Read once, then delete.
-        List<PageVisit> expiredPages = pageVisitRepository.findByLastVisitedBefore(eventCutoff);
-        List<com.trak.domain.model.SearchQuery> expiredSearches = searchQueryRepository.findByTimestampBefore(eventCutoff);
-        expiredPages.forEach(page -> searchIndexService.removeDocument(page.getId()));
-        expiredSearches.forEach(search -> searchIndexService.removeDocument(search.getId()));
-
-        pageVisitRepository.deleteAll(expiredPages);
-        searchQueryRepository.deleteAll(expiredSearches);
-        int events = eventRepository.deleteOlderThan(eventCutoff);
-
-        // Finished sessions past the (longer) session window, with their data.
-        // ACTIVE sessions are never pruned, so a long-running session is safe.
-        List<ResearchSession> expiredSessions =
-                sessionRepository.findByEndTimeBeforeAndStatusNot(sessionCutoff, ACTIVE_STATUS);
-        int sessions = 0;
-        for (ResearchSession session : expiredSessions) {
-            searchIndexService.removeSession(session.getId());
-            eventRepository.deleteAll(eventRepository.findBySessionId(session.getId()));
-            pageVisitRepository.deleteAll(pageVisitRepository.findBySessionId(session.getId()));
-            searchQueryRepository.deleteAll(searchQueryRepository.findBySessionId(session.getId()));
-            sessionRepository.delete(session);
-            sessions++;
-        }
-
-        int total = expiredPages.size() + expiredSearches.size() + events + sessions;
-        if (total > 0) {
-            log.info("Retention prune: {} pages, {} searches, {} events, {} sessions",
-                    expiredPages.size(), expiredSearches.size(), events, sessions);
-        }
-        return new RetentionReport(expiredPages.size(), expiredSearches.size(), events, sessions, Instant.now());
     }
 
     /**
@@ -172,9 +110,6 @@ public class DataLifecycleService {
             log.warn("Could not compact the database file; rows remain erased, space reclaimed later", e);
         }
     }
-
-    public record RetentionReport(int pagesRemoved, int searchesRemoved, int eventsRemoved,
-                                  int sessionsRemoved, Instant completedAt) {}
 
     public record DeletionReport(int eventsDeleted, int pagesDeleted, int searchesDeleted,
                                  int sessionsDeleted, Instant completedAt) {}

@@ -54,7 +54,7 @@ What Pariet deliberately does **not** capture:
 
 **Retention and erasure:**
 
-- Events, pages and searches are pruned after 90 days; finished sessions after 365 days (`app.retention.*`). The sweep runs daily; active sessions are never pruned.
+- There is **no automatic deletion**. Nothing is pruned on a schedule: the archive is your research record, and only you decide what to discard. The database grows with use, which is fine for SQLite.
 - **Delete all data** in the sidebar erases every session, URL, search and event, and also clears the browser's localStorage mirror. Deleted rows are zeroed (`PRAGMA secure_delete`) and the file is compacted, so the data is not merely unlinked.
 - The database is **not encrypted at rest**. Anyone with filesystem, backup or sync access to `backend/data/` can read the history in cleartext. Use full-disk encryption (BitLocker/FileVault) for that.
 - The history is stored twice on disk: in SQLite and, as an offline fallback, in the browser's localStorage. Deleting all data clears both.

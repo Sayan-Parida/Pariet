@@ -14,30 +14,28 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Retention pruning and full erasure of locally stored browsing data.
+ * Full erasure of locally stored browsing data.
+ *
+ * <p>There is no automatic retention in this system: nothing is pruned on a
+ * schedule. These tests cover only the deliberate, user-triggered erase.
  */
 @SpringBootTest
 @Transactional
 class DataLifecycleServiceTest {
 
     private static final String RESEARCH_URL = "https://kafka.apache.org/documentation/";
-    private static final String SEARCH_URL = "https://www.google.com/search?q=retention+test";
+    private static final String OTHER_URL = "https://example.org/unattributed";
 
     @Autowired
     private DataLifecycleService lifecycleService;
-
-    @Autowired
-    private DataRetentionJob retentionJob;
 
     @Autowired
     private ResearchSessionRepository sessionRepository;
@@ -70,92 +68,6 @@ class DataLifecycleServiceTest {
         return event;
     }
 
-    private ResearchSession completedSessionEndedAt(Instant endTime) {
-        ResearchSession session = sessionService.createSession("Prune me", 1);
-        session.setStatus("COMPLETED");
-        session.setStartTime(endTime.minus(2, ChronoUnit.HOURS));
-        session.setEndTime(endTime);
-        return sessionRepository.save(session);
-    }
-
-    @Test
-    void pruneRemovesOldEventsPagesAndSearches() {
-        Instant now = Instant.now();
-        Instant old = now.minus(200, ChronoUnit.DAYS);
-
-        ResearchSession session = sessionService.createSession("Old activity", 1);
-        eventRepository.saveAndFlush(
-                event(EventType.NAVIGATION, RESEARCH_URL, "Kafka documentation", 11, 1, old, session.getId()));
-
-        PageVisit page = new PageVisit();
-        page.setUrl(RESEARCH_URL);
-        page.setDomain("kafka.apache.org");
-        page.setTitle("Kafka documentation");
-        page.setFirstVisited(old);
-        page.setLastVisited(old);
-        page.setSessionId(session.getId());
-        pageVisitRepository.saveAndFlush(page);
-
-        SearchQuery search = new SearchQuery();
-        search.setQueryText("retention test");
-        search.setEngine("google");
-        search.setSourceUrl(SEARCH_URL);
-        search.setTimestamp(old);
-        search.setSessionId(session.getId());
-        searchQueryRepository.saveAndFlush(search);
-
-        DataLifecycleService.RetentionReport report =
-                lifecycleService.pruneExpiredData(Duration.ofDays(90), Duration.ofDays(365), now);
-
-        assertEquals(1, report.pagesRemoved());
-        assertEquals(1, report.searchesRemoved());
-        assertTrue(report.eventsRemoved() >= 1);
-        assertTrue(pageVisitRepository.findBySessionId(session.getId()).isEmpty());
-        assertTrue(searchQueryRepository.findBySessionId(session.getId()).isEmpty());
-        // The full-text index must not keep serving the pruned URL/query.
-        assertTrue(searchIndexService.search("kafka", 10).stream()
-                .noneMatch(hit -> page.getId().equals(hit.sourceId())));
-    }
-
-    @Test
-    void pruneKeepsDataWithinRetentionWindow() {
-        Instant now = Instant.now();
-        ResearchSession session = sessionService.createSession("Recent activity", 1);
-
-        PageVisit page = new PageVisit();
-        page.setUrl("https://example.com/recent");
-        page.setDomain("example.com");
-        page.setTitle("Recent");
-        page.setFirstVisited(now.minus(3, ChronoUnit.DAYS));
-        page.setLastVisited(now.minus(3, ChronoUnit.DAYS));
-        page.setSessionId(session.getId());
-        pageVisitRepository.saveAndFlush(page);
-
-        DataLifecycleService.RetentionReport report =
-                lifecycleService.pruneExpiredData(Duration.ofDays(90), Duration.ofDays(365), now);
-
-        assertEquals(0, report.pagesRemoved());
-        assertEquals(1, pageVisitRepository.findBySessionId(session.getId()).size());
-    }
-
-    @Test
-    void pruneRemovesOldFinishedSessionsButNeverActiveOnes() {
-        Instant now = Instant.now();
-        ResearchSession oldFinished = completedSessionEndedAt(now.minus(500, ChronoUnit.DAYS));
-        ResearchSession oldActive = sessionService.createSession("Still running", 1);
-        oldActive.setStatus("ACTIVE");
-        oldActive.setEndTime(now.minus(500, ChronoUnit.DAYS));
-        sessionRepository.saveAndFlush(oldActive);
-
-        DataLifecycleService.RetentionReport report =
-                lifecycleService.pruneExpiredData(Duration.ofDays(90), Duration.ofDays(365), now);
-
-        assertEquals(1, report.sessionsRemoved());
-        assertFalse(sessionRepository.existsById(oldFinished.getId()));
-        // An ACTIVE session is never pruned regardless of age.
-        assertTrue(sessionRepository.existsById(oldActive.getId()));
-    }
-
     @Test
     void deleteAllDataErasesEverythingIncludingUnattributedEvents() {
         Instant now = Instant.now();
@@ -166,7 +78,7 @@ class DataLifecycleServiceTest {
 
         // An event with no session attribution, as captured outside a session.
         eventRepository.saveAndFlush(
-                event(EventType.TAB_ACTIVATED, "https://example.org/unattributed", "Unattributed", 22, 2, now, null));
+                event(EventType.TAB_ACTIVATED, OTHER_URL, "Unattributed", 22, 2, now, null));
 
         PageVisit page = new PageVisit();
         page.setUrl(RESEARCH_URL);
@@ -176,6 +88,14 @@ class DataLifecycleServiceTest {
         page.setLastVisited(now);
         page.setSessionId(session.getId());
         pageVisitRepository.saveAndFlush(page);
+
+        SearchQuery search = new SearchQuery();
+        search.setQueryText("erasure test");
+        search.setEngine("google");
+        search.setSourceUrl("https://www.google.com/search?q=erasure+test");
+        search.setTimestamp(now);
+        search.setSessionId(session.getId());
+        searchQueryRepository.saveAndFlush(search);
 
         assertTrue(eventRepository.count() > 0);
 
@@ -192,16 +112,56 @@ class DataLifecycleServiceTest {
     }
 
     @Test
-    void retentionJobUsesConfiguredWindows() {
-        // Defaults are 90 days for events and 365 for sessions.
-        assertEquals(Duration.ofDays(90), retentionJob.getEventRetention());
-        assertEquals(Duration.ofDays(365), retentionJob.getSessionRetention());
+    void dataIsKeptIndefinitelyUntilExplicitlyErased() {
+        // Old data must survive: there is no automatic retention, so a session
+        // that ended months ago is still listed.
+        Instant longAgo = Instant.now().minus(3650, ChronoUnit.DAYS);
+        ResearchSession old = sessionService.createSession("Ancient", 1);
+        old.setStatus("COMPLETED");
+        old.setStartTime(longAgo);
+        old.setEndTime(longAgo);
+        sessionRepository.saveAndFlush(old);
+
+        PageVisit page = new PageVisit();
+        page.setUrl("https://example.com/ancient");
+        page.setDomain("example.com");
+        page.setTitle("Ancient page");
+        page.setFirstVisited(longAgo);
+        page.setLastVisited(longAgo);
+        page.setSessionId(old.getId());
+        pageVisitRepository.saveAndFlush(page);
+
+        assertEquals(1, sessionRepository.count());
+        assertEquals(1, pageVisitRepository.findBySessionId(old.getId()).size());
     }
 
     @Test
-    void retentionJobClampsNonsensicalConfiguration() {
-        DataRetentionJob job = new DataRetentionJob(lifecycleService, 0, -5, 99);
-        assertEquals(Duration.ofDays(1), job.getEventRetention());
-        assertEquals(Duration.ofDays(1), job.getSessionRetention());
+    void deleteAllDataOnEmptyDatabaseIsANoOp() {
+        DataLifecycleService.DeletionReport report = lifecycleService.deleteAllData();
+        assertEquals(0, report.eventsDeleted());
+        assertEquals(0, report.pagesDeleted());
+        assertEquals(0, report.searchesDeleted());
+        assertEquals(0, report.sessionsDeleted());
+    }
+
+    @Test
+    void deletingOneSessionLeavesOthersIntact() {
+        ResearchSession keep = sessionService.createSession("Keep me", 1);
+        ResearchSession drop = sessionService.createSession("Drop me", 1);
+
+        PageVisit page = new PageVisit();
+        page.setUrl("https://example.com/keep");
+        page.setDomain("example.com");
+        page.setTitle("Keep");
+        page.setFirstVisited(Instant.now());
+        page.setLastVisited(Instant.now());
+        page.setSessionId(keep.getId());
+        pageVisitRepository.saveAndFlush(page);
+
+        sessionService.deleteSession(drop.getId());
+
+        assertTrue(sessionRepository.existsById(keep.getId()));
+        assertTrue(!sessionRepository.existsById(drop.getId()));
+        assertEquals(1, pageVisitRepository.findBySessionId(keep.getId()).size());
     }
 }
