@@ -158,6 +158,28 @@ class ResearchStore {
     this.persist();
   }
 
+  /**
+   * Erase every locally mirrored record: sessions, graphs, visited pages and
+   * timelines. This clears the browser-localStorage copy of the browsing data
+   * that the backend also stores, so "delete all data" leaves nothing behind.
+   */
+  public clearAll(): void {
+    this.sessions = [];
+    this.graphs = {};
+    this.pages = {};
+    this.timelines = {};
+
+    try {
+      Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+      // Per-session mind-map node positions, stored under a derived key.
+      Object.keys(localStorage)
+        .filter(key => key.startsWith('rm_positions_') || key.startsWith('rm_'))
+        .forEach(key => localStorage.removeItem(key));
+    } catch (e) {
+      console.warn('Failed to clear localStorage:', e);
+    }
+  }
+
   public getMindMap(sessionId: string): MindMapData {
     const graph = this.graphs[sessionId] || { nodes: [], edges: [] };
     return {

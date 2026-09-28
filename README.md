@@ -33,20 +33,31 @@ Each session becomes a graph: the session node connects to the searches run duri
 
 ## Privacy
 
-The research backend, database, and browser extension are designed to run locally on your machine: the extension talks only to `http://localhost:8080`, and all data lives in a local SQLite file. There is no cloud account, no sync server, and no analytics.
+The research backend, database, and browser extension run locally on your machine. The extension talks only to `http://localhost:8080`, and all data lives in a local SQLite file. There is no cloud account, no sync server, no analytics, and no third-party request of any kind — the UI uses locally installed system fonts rather than loading webfonts.
 
-What Pariet captures (only while a session is active):
+**Network exposure:** the backend binds to `127.0.0.1` only (`server.address` in `application.properties`), so it is unreachable from other devices on your network. It has no authentication, so treat the port as trusted-local: do not change that bind address or expose the port by forwarding.
+
+What Pariet captures (only while a session is active — nothing is recorded outside a session):
 
 - Tab opened, page visited, tab switched to, tab closed
 - For each: event type, URL, page title, tab/window identifiers, timestamp
 - Search queries, detected from search-engine navigation
+- Per-URL dwell time, inferred from tab activation deltas
+- A session belongs to the browser window it was started in; activity in other windows is never attributed to it
 
 What Pariet deliberately does **not** capture:
 
 - Incognito tabs — skipped entirely
-- Browser-internal pages (`chrome://`, `about:`, extension pages)
+- Browser-internal pages (`chrome://`, `chrome-extension://`, `about:`, `edge://`, `devtools://`, `view-source:`, `file:`, `data:`)
 - Page body content, keystrokes, form inputs, or passwords
 - Screenshots, cookies, or full browsing history imports
+
+**Retention and erasure:**
+
+- Events, pages and searches are pruned after 90 days; finished sessions after 365 days (`app.retention.*`). The sweep runs daily; active sessions are never pruned.
+- **Delete all data** in the sidebar erases every session, URL, search and event, and also clears the browser's localStorage mirror. Deleted rows are zeroed (`PRAGMA secure_delete`) and the file is compacted, so the data is not merely unlinked.
+- The database is **not encrypted at rest**. Anyone with filesystem, backup or sync access to `backend/data/` can read the history in cleartext. Use full-disk encryption (BitLocker/FileVault) for that.
+- The history is stored twice on disk: in SQLite and, as an offline fallback, in the browser's localStorage. Deleting all data clears both.
 
 ## Architecture
 

@@ -69,7 +69,14 @@ async function processEvent(event: BrowserEventRequest) {
     }
   }
   
-  if (shouldAttributeSession && sessionState.sessionId) {
+  // Capture is session-scoped: nothing is recorded while no Research Session
+  // is active. Previously every tab event was sent unconditionally, which
+  // stored a permanent record of all browsing activity even outside sessions.
+  if (!sessionState.isActive || !sessionState.sessionId) {
+    return;
+  }
+
+  if (shouldAttributeSession) {
     event.sessionId = sessionState.sessionId;
   }
   
@@ -98,11 +105,19 @@ async function flushQueue() {
 
   const failedEvents: number[] = [];
 
+  // Queue draining is re-evaluated against current state: events queued while
+  // a session was active are dropped if the session has since ended, so a
+  // delayed flush cannot attribute activity to a closed session.
+  if (!sessionState?.isActive || !sessionState?.sessionId) {
+    await chrome.storage.local.set({ eventQueue: [] });
+    return;
+  }
+
   for (let i = 0; i < queue.length; i++) {
     const queuedEvent = queue[i].event;
     let shouldAttributeSession = false;
     
-    if (sessionState.isActive && sessionState.sessionId && windowMatchesSession(sessionState, queuedEvent)) {
+    if (windowMatchesSession(sessionState, queuedEvent)) {
       const isPreExistingTab = preExistingTabIds.includes(queuedEvent.tabId);
       
       if (!isPreExistingTab) {
@@ -156,6 +171,19 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
+// Only real web pages are recorded. This rejects internal browser pages
+// (chrome://, chrome-extension://, about:, edge://, view-source:, file: and
+// anything else) so they never reach the database. Previously some listeners
+// only filtered when a URL happened to be present, letting chrome:// URLs in.
+function isTrackableUrl(url: string | undefined | null): url is string {
+  if (!url) return false;
+  if (url.startsWith('chrome://') || url.startsWith('chrome-extension://')) return false;
+  if (url.startsWith('about:') || url.startsWith('edge://')) return false;
+  if (url.startsWith('devtools://') || url.startsWith('view-source:')) return false;
+  if (url.startsWith('file:') || url.startsWith('data:') || url.startsWith('javascript:')) return false;
+  return url.startsWith('http://') || url.startsWith('https://');
+}
+
 // Helper to check incognito
 async function isIncognito(tabId: number): Promise<boolean> {
   try {
@@ -170,8 +198,10 @@ async function isIncognito(tabId: number): Promise<boolean> {
 
 chrome.tabs.onCreated.addListener(async (tab) => {
   if (tab.incognito) return;
+  // A new tab often has no URL yet (chrome://newtab/ or blank); such tabs are
+  // recorded once they commit a real navigation, so skip them here.
   const url = tab.url || tab.pendingUrl;
-  if (url != null && (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:'))) return;
+  if (!isTrackableUrl(url)) return;
   const event: BrowserEventRequest = {
     eventType: 'TAB_CREATED',
     url: url,
@@ -188,7 +218,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId !== 0) return; // Main frame only
   
   const url = details.url;
-  if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) return;
+  if (!isTrackableUrl(url)) return;
 
   const incognito = await isIncognito(details.tabId);
   if (incognito) return;
@@ -216,7 +246,7 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
   if (details.tabId <= 0) return;
   
   const url = details.url;
-  if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) return;
+  if (!isTrackableUrl(url)) return;
 
   try {
     const tab = await chrome.tabs.get(details.tabId);
@@ -241,7 +271,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const tab = await chrome.tabs.get(activeInfo.tabId);
     if (tab.incognito) return;
     const url = tab.url;
-    if (url != null && (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:'))) return;
+    if (!isTrackableUrl(url)) return;
 
     const event: BrowserEventRequest = {
       eventType: 'TAB_ACTIVATED',
@@ -258,7 +288,8 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
-  // We can't check incognito here reliably since tab is gone, but we only have tabId anyway
+  // The tab is already gone, so its URL and incognito flag are unavailable.
+  // A close event carries no URL at all, so nothing page-identifying is sent.
   const event: BrowserEventRequest = {
     eventType: 'TAB_CLOSED',
     tabId: tabId,

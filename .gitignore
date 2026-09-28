@@ -1,10 +1,9 @@
 # Maven build output
 backend/target/
 
-# Local SQLite runtime data
-backend/data/*.db
-backend/data/*.db-wal
-backend/data/*.db-shm
+# Local SQLite runtime data (browsing history lives here - never commit any of
+# it, including WAL/journal sidecars)
+backend/data/
 
 # Node dependencies
 **/node_modules/

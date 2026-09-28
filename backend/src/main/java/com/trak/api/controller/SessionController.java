@@ -9,12 +9,17 @@ import com.trak.domain.repository.SearchQueryRepository;
 import com.trak.service.ResearchMemoryService;
 import com.trak.service.ResearchSessionService;
 import com.trak.service.ResearchGraphService;
+import com.trak.service.DataLifecycleService;
+import com.trak.service.DataLifecycleService.DeletionReport;
+import com.trak.service.DataRetentionJob;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -27,19 +32,25 @@ public class SessionController {
     private final PageVisitRepository pageVisitRepository;
     private final SearchQueryRepository searchQueryRepository;
     private final ResearchGraphService researchGraphService;
+    private final DataLifecycleService lifecycleService;
+    private final DataRetentionJob dataRetentionJob;
 
     public SessionController(ResearchSessionService sessionService,
                              ResearchMemoryService researchMemoryService,
                              BrowserEventRepository eventRepository,
                              PageVisitRepository pageVisitRepository,
                              SearchQueryRepository searchQueryRepository,
-                             ResearchGraphService researchGraphService) {
+                             ResearchGraphService researchGraphService,
+                             DataLifecycleService lifecycleService,
+                             DataRetentionJob dataRetentionJob) {
         this.sessionService = sessionService;
         this.researchMemoryService = researchMemoryService;
         this.eventRepository = eventRepository;
         this.pageVisitRepository = pageVisitRepository;
         this.searchQueryRepository = searchQueryRepository;
         this.researchGraphService = researchGraphService;
+        this.lifecycleService = lifecycleService;
+        this.dataRetentionJob = dataRetentionJob;
     }
 
     @PostMapping
@@ -115,6 +126,34 @@ public class SessionController {
     @GetMapping("/{id}/research-memory")
     public ResponseEntity<ResearchMemoryResponse> getResearchMemory(@PathVariable String id) {
         return ResponseEntity.ok(researchMemoryService.getMemory(id));
+    }
+
+    /**
+     * Erase every stored browsing record: events, pages, searches, sessions and
+     * the full-text index. This is irreversible; the file is compacted
+     * afterwards so the data is not merely unlinked.
+     */
+    @DeleteMapping("/all")
+    public ResponseEntity<Map<String, Object>> deleteAllData() {
+        DeletionReport report = lifecycleService.deleteAllData();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("success", true);
+        body.put("eventsDeleted", report.eventsDeleted());
+        body.put("pagesDeleted", report.pagesDeleted());
+        body.put("searchesDeleted", report.searchesDeleted());
+        body.put("sessionsDeleted", report.sessionsDeleted());
+        body.put("completedAt", report.completedAt());
+        return ResponseEntity.ok(body);
+    }
+
+    /** Current retention configuration, so the UI can show what is kept. */
+    @GetMapping("/data-retention")
+    public ResponseEntity<Map<String, Object>> getDataRetention() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("eventDays", dataRetentionJob.getEventRetention().toDays());
+        body.put("sessionDays", dataRetentionJob.getSessionRetention().toDays());
+        body.put("pruneHourUtc", dataRetentionJob.getPruneTimeUtc().toString());
+        return ResponseEntity.ok(body);
     }
 
     private SessionResponse mapToResponse(ResearchSession session) {

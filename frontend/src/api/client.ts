@@ -67,7 +67,7 @@ export const apiClient = {
     try {
       response = await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
     } catch {
-      // Backend unreachable — fall back to the local mirror.
+      // Backend unreachable - fall back to the local mirror.
       researchStore.deleteSession(id);
       return;
     }
@@ -75,6 +75,29 @@ export const apiClient = {
       throw new Error(`API Error: ${response.status} ${response.statusText}`);
     }
     researchStore.deleteSession(id);
+  },
+
+  /**
+   * Erase all browsing data from the backend database and the browser's
+   * localStorage mirror. Irreversible.
+   */
+  deleteAllData: async (): Promise<void> => {
+    let response: Response;
+    try {
+      response = await fetch('/api/sessions/all', { method: 'DELETE' });
+    } catch {
+      // Backend unreachable: clear the local mirror so nothing persists here.
+      researchStore.clearAll();
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    }
+    researchStore.clearAll();
+  },
+
+  getDataRetention: async (): Promise<{ eventDays: number; sessionDays: number; pruneHourUtc: string }> => {
+    return fetchJson<{ eventDays: number; sessionDays: number; pruneHourUtc: string }>('/api/sessions/data-retention');
   },
 
   getTimeline: async (id: string): Promise<TimelineEntry[]> => {

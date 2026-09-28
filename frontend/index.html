@@ -5,9 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="ResearchMind is an AI-powered research workspace that helps users search, explore, and understand research through an interactive knowledge graph." />
     <title>ResearchMind — AI Research Workspace & Interactive Knowledge Graph</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!--
+      Fonts are intentionally NOT loaded from Google Fonts: that request would
+      be the only third-party network call in the app, disclosing the user's
+      IP address and the fact this project is in use. The font stacks in
+      index.css fall back to locally installed system fonts.
+    -->
   </head>
   <body>
     <div id="root"></div>

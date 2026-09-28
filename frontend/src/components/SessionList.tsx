@@ -37,6 +37,9 @@ export default function SessionList({
   const [statusFilter, setStatusFilter] = useState<'ALL' | SessionStatus>('ALL');
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [wiping, setWiping] = useState(false);
+  const [confirmWipe, setConfirmWipe] = useState(false);
+  const [retention, setRetention] = useState<{ eventDays: number; sessionDays: number } | null>(null);
 
   const fetchSessions = async () => {
     try {
@@ -75,6 +78,32 @@ export default function SessionList({
       setDeleteError('Could not delete this session.');
     }
   };
+
+  const handleDeleteAll = async () => {
+    if (!confirmWipe) {
+      setConfirmWipe(true);
+      return;
+    }
+    try {
+      setWiping(true);
+      await apiClient.deleteAllData();
+      setSessions([]);
+      onSelectSession(null);
+      researchStore.clearAll();
+      setDeleteError(null);
+    } catch {
+      setDeleteError('Could not delete local data.');
+    } finally {
+      setWiping(false);
+      setConfirmWipe(false);
+    }
+  };
+
+  useEffect(() => {
+    apiClient.getDataRetention()
+      .then(setRetention)
+      .catch(() => setRetention(null));
+  }, []);
 
   const filteredSessions = sessions.filter((s) => {
     const query = searchFilter.trim().toLowerCase();
@@ -277,6 +306,38 @@ export default function SessionList({
               </div>
             );
           })
+        )}
+      </div>
+
+      {/* Data & privacy controls */}
+      <div
+        className="px-3 py-2.5 border-t-2 space-y-1.5 shrink-0"
+        style={{ borderColor: 'var(--border-subtle)' }}
+      >
+        <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.1em] text-[var(--text-faint)]">
+          <span>Data &amp; privacy</span>
+          <span>On this device</span>
+        </div>
+        {retention && (
+          <p className="font-mono text-[9px] leading-snug text-[var(--text-faint)]">
+            Retains pages &amp; searches {retention.eventDays}d, sessions {retention.sessionDays}d.
+          </p>
+        )}
+        <button
+          onClick={handleDeleteAll}
+          disabled={wiping}
+          className={`w-full border-2 px-2 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-colors disabled:opacity-50 ${
+            confirmWipe
+              ? 'border-[var(--status-danger)] text-[var(--status-danger)] bg-[var(--surface-base)]'
+              : 'border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--status-danger)] hover:text-[var(--status-danger)]'
+          }`}
+        >
+          {wiping ? 'Deleting...' : confirmWipe ? 'Click again to confirm erase' : 'Delete all data'}
+        </button>
+        {confirmWipe && !wiping && (
+          <p className="font-mono text-[9px] leading-snug text-[var(--text-faint)]">
+            Erases every session, URL, and search from this device permanently.
+          </p>
         )}
       </div>
 

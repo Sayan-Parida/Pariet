@@ -63,6 +63,19 @@ public class ResearchSearchIndexService {
         jdbcTemplate.update("DELETE FROM " + INDEX_TABLE + " WHERE session_id = ?", sessionId);
     }
 
+    /**
+     * Remove a single indexed document (page or search). Used by retention
+     * pruning so the index cannot keep serving rows that were just deleted.
+     */
+    @Transactional
+    public void removeDocument(String documentId) {
+        if (documentId == null) {
+            return;
+        }
+        initialize();
+        jdbcTemplate.update("DELETE FROM " + INDEX_TABLE + " WHERE document_id = ?", documentId);
+    }
+
     @Transactional(readOnly = true)
     public List<IndexHit> search(String matchQuery, int limit) {
         initialize();

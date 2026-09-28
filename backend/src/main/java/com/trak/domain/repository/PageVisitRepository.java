@@ -2,8 +2,12 @@ package com.trak.domain.repository;
 
 import com.trak.domain.model.PageVisit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,4 +27,14 @@ public interface PageVisitRepository extends JpaRepository<PageVisit, String> {
     List<PageVisit> findByUrlContainingIgnoreCase(String term);
     List<PageVisit> findByNormalizedTitleIsNullOrNormalizedTitle(String value);
     List<PageVisit> findByNormalizedDomainIsNullOrNormalizedDomain(String value);
+
+    /**
+     * Retention: drop visits whose most recent activity predates the cutoff.
+     * Ordered so the full-text index can be updated for exactly these rows.
+     */
+    List<PageVisit> findByLastVisitedBefore(Instant cutoff);
+
+    @Modifying
+    @Query("DELETE FROM PageVisit")
+    int deleteAllVisits();
 }

@@ -29,6 +29,9 @@ public class DatabaseConfig {
                  Statement stmt = conn.createStatement()) {
                 stmt.execute("PRAGMA journal_mode=WAL;");
                 stmt.execute("PRAGMA foreign_keys=ON;");
+                // Zero out freed pages so deleted URLs/searches are not
+                // recoverable from the raw database file.
+                stmt.execute("PRAGMA secure_delete=ON;");
             }
         } catch (Exception e) {
             e.printStackTrace();
