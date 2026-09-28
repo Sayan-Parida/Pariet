@@ -1,12 +1,16 @@
 {
-  "name": "pariet-workspace",
+  "name": "pariet",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "extension"
+  ],
   "scripts": {
-    "build:dashboard": "npm --prefix frontend run build",
-    "build:extension": "npm --prefix extension run build",
+    "build:dashboard": "npm --workspace frontend run build",
+    "build:extension": "npm --workspace extension run build",
     "build": "npm run build:dashboard && npm run build:extension",
-    "dev:dashboard": "npm --prefix frontend run dev",
-    "dev:extension": "npm --prefix extension run dev"
+    "dev:dashboard": "npm --workspace frontend run dev",
+    "dev:extension": "npm --workspace extension run dev"
   },
   "dependencies": {
     "puppeteer-core": "^25.11.0"
