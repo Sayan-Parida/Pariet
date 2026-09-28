@@ -28,11 +28,9 @@ public interface PageVisitRepository extends JpaRepository<PageVisit, String> {
     List<PageVisit> findByNormalizedTitleIsNullOrNormalizedTitle(String value);
     List<PageVisit> findByNormalizedDomainIsNullOrNormalizedDomain(String value);
 
-    /**
-     * Retention: drop visits whose most recent activity predates the cutoff.
-     * Ordered so the full-text index can be updated for exactly these rows.
-     */
-    List<PageVisit> findByLastVisitedBefore(Instant cutoff);
+    /** Grouped per-session counts, to avoid an N+1 pattern when listing. */
+    @Query("SELECT p.sessionId, COUNT(p) FROM PageVisit p WHERE p.sessionId IN :sessionIds GROUP BY p.sessionId")
+    List<Object[]> countBySessionIds(@Param("sessionIds") List<String> sessionIds);
 
     @Modifying
     @Query("DELETE FROM PageVisit")

@@ -11,12 +11,12 @@ import com.trak.service.ResearchSessionService;
 import com.trak.service.ResearchGraphService;
 import com.trak.service.DataLifecycleService;
 import com.trak.service.DataLifecycleService.DeletionReport;
-import com.trak.service.DataRetentionJob;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +33,6 @@ public class SessionController {
     private final SearchQueryRepository searchQueryRepository;
     private final ResearchGraphService researchGraphService;
     private final DataLifecycleService lifecycleService;
-    private final DataRetentionJob dataRetentionJob;
 
     public SessionController(ResearchSessionService sessionService,
                              ResearchMemoryService researchMemoryService,
@@ -41,8 +40,7 @@ public class SessionController {
                              PageVisitRepository pageVisitRepository,
                              SearchQueryRepository searchQueryRepository,
                              ResearchGraphService researchGraphService,
-                             DataLifecycleService lifecycleService,
-                             DataRetentionJob dataRetentionJob) {
+                             DataLifecycleService lifecycleService) {
         this.sessionService = sessionService;
         this.researchMemoryService = researchMemoryService;
         this.eventRepository = eventRepository;
@@ -50,7 +48,6 @@ public class SessionController {
         this.searchQueryRepository = searchQueryRepository;
         this.researchGraphService = researchGraphService;
         this.lifecycleService = lifecycleService;
-        this.dataRetentionJob = dataRetentionJob;
     }
 
     @PostMapping
@@ -61,10 +58,35 @@ public class SessionController {
 
     @GetMapping
     public ResponseEntity<List<SessionResponse>> listSessions() {
-        List<SessionResponse> responses = sessionService.listSessions().stream()
-                .map(this::mapToResponse)
+        List<ResearchSession> sessions = sessionService.listSessions();
+        if (sessions.isEmpty()) {
+            return ResponseEntity.ok(List.of());
+        }
+        // Per-session counts come from three grouped queries rather than one
+        // query per session per table, so the list cost stays flat as the
+        // archive grows.
+        List<String> ids = sessions.stream().map(ResearchSession::getId).toList();
+        Map<String, Long> eventCounts = groupCounts(eventRepository.countBySessionIds(ids));
+        Map<String, Long> pageCounts = groupCounts(pageVisitRepository.countBySessionIds(ids));
+        Map<String, Long> searchCounts = groupCounts(searchQueryRepository.countBySessionIds(ids));
+
+        List<SessionResponse> responses = sessions.stream()
+                .map(session -> DtoMapper.toResponse(session,
+                        eventCounts.getOrDefault(session.getId(), 0L),
+                        pageCounts.getOrDefault(session.getId(), 0L),
+                        searchCounts.getOrDefault(session.getId(), 0L)))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(responses);
+    }
+
+    private Map<String, Long> groupCounts(List<Object[]> rows) {
+        Map<String, Long> counts = new HashMap<>();
+        for (Object[] row : rows) {
+            if (row[0] != null) {
+                counts.put((String) row[0], ((Number) row[1]).longValue());
+            }
+        }
+        return counts;
     }
 
     @GetMapping("/{id}")
@@ -143,16 +165,6 @@ public class SessionController {
         body.put("searchesDeleted", report.searchesDeleted());
         body.put("sessionsDeleted", report.sessionsDeleted());
         body.put("completedAt", report.completedAt());
-        return ResponseEntity.ok(body);
-    }
-
-    /** Current retention configuration, so the UI can show what is kept. */
-    @GetMapping("/data-retention")
-    public ResponseEntity<Map<String, Object>> getDataRetention() {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("eventDays", dataRetentionJob.getEventRetention().toDays());
-        body.put("sessionDays", dataRetentionJob.getSessionRetention().toDays());
-        body.put("pruneHourUtc", dataRetentionJob.getPruneTimeUtc().toString());
         return ResponseEntity.ok(body);
     }
 

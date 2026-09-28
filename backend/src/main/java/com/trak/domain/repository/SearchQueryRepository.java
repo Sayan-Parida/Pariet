@@ -4,6 +4,7 @@ import com.trak.domain.model.SearchQuery;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -19,8 +20,9 @@ public interface SearchQueryRepository extends JpaRepository<SearchQuery, String
     SearchQuery findBySessionIdAndNormalizedQueryAndSourceUrlAndTimestamp(
             String sessionId, String normalizedQuery, String sourceUrl, Instant timestamp);
 
-    /** Retention: drop searches older than the cutoff. */
-    List<SearchQuery> findByTimestampBefore(Instant cutoff);
+    /** Grouped per-session counts, to avoid an N+1 pattern when listing. */
+    @Query("SELECT s.sessionId, COUNT(s) FROM SearchQuery s WHERE s.sessionId IN :sessionIds GROUP BY s.sessionId")
+    List<Object[]> countBySessionIds(@Param("sessionIds") List<String> sessionIds);
 
     @Modifying
     @Query("DELETE FROM SearchQuery")

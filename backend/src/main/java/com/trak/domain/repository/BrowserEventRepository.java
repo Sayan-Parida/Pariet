@@ -18,14 +18,13 @@ public interface BrowserEventRepository extends JpaRepository<BrowserEvent, Long
     List<BrowserEvent> findByProcessedFalse();
     List<BrowserEvent> findBySessionId(String sessionId);
 
-    /** Retention: drop raw events older than the cutoff. */
-    @Modifying
-    @Query("SELECT e.id FROM BrowserEvent e WHERE e.timestamp < :cutoff")
-    List<Long> findIdsOlderThan(@Param("cutoff") Instant cutoff);
-
-    @Modifying
-    @Query("DELETE FROM BrowserEvent e WHERE e.timestamp < :cutoff")
-    int deleteOlderThan(@Param("cutoff") Instant cutoff);
+    /**
+     * Grouped per-session counts for a set of sessions, returned in one query.
+     * Used by the session list to avoid an N+1 query pattern: listing N
+     * sessions would otherwise issue 3N queries.
+     */
+    @Query("SELECT e.sessionId, COUNT(e) FROM BrowserEvent e WHERE e.sessionId IN :sessionIds GROUP BY e.sessionId")
+    List<Object[]> countBySessionIds(@Param("sessionIds") List<String> sessionIds);
 
     /** Wipe: drop every event, including unattributed ones. */
     @Modifying

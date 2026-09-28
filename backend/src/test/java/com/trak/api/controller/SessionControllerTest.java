@@ -1,5 +1,6 @@
 package com.trak.api.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trak.api.dto.ResearchMemoryResponse;
 import com.trak.api.dto.SessionCreateRequest;
@@ -7,7 +8,9 @@ import com.trak.api.dto.SessionUpdateRequest;
 import com.trak.domain.model.EventType;
 import com.trak.domain.model.PageVisit;
 import com.trak.domain.model.ResearchSession;
+import com.trak.domain.repository.BrowserEventRepository;
 import com.trak.domain.repository.PageVisitRepository;
+import com.trak.domain.repository.SearchQueryRepository;
 import com.trak.service.ResearchGraphService;
 import com.trak.service.EventIngestionService;
 import com.trak.service.ResearchMemoryService;
@@ -20,8 +23,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -46,6 +54,12 @@ class SessionControllerTest {
 
     @Autowired
     private PageVisitRepository pageVisitRepository;
+
+    @Autowired
+    private SearchQueryRepository searchQueryRepository;
+
+    @Autowired
+    private BrowserEventRepository eventRepository;
 
     @Autowired
     private ResearchGraphService researchGraphService;
@@ -145,6 +159,45 @@ class SessionControllerTest {
 
         mockMvc.perform(get("/api/sessions/non-existent-id/searches"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listSessionsReturnsAccurateCountsForManySessions() throws Exception {
+        // The list endpoint derives per-session counts with grouped queries
+        // rather than one query per session, so it stays correct (and flat in
+        // cost) as the archive grows.
+        for (int i = 0; i < 12; i++) {
+            ResearchSession session = sessionService.createSession("Bulk " + i, 1);
+            for (int j = 0; j <= i % 3; j++) {
+                eventIngestionService.ingestEvent(new com.trak.api.dto.BrowserEventRequest(
+                        "NAVIGATION", "https://example.com/bulk-" + i + "-" + j, "Bulk Page " + j,
+                        i * 10 + j, 1, "link", null, "", null, null,
+                        Instant.now().plusMillis(i * 1000L + j).toEpochMilli(), session.getId()));
+            }
+        }
+
+        mockMvc.perform(get("/api/sessions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(greaterThanOrEqualTo(12))));
+
+        String body = mockMvc.perform(get("/api/sessions"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        List<Map<String, Object>> listed = new ArrayList<>();
+        for (Map<String, Object> row : objectMapper.readValue(body, new TypeReference<List<Map<String, Object>>>() {})) {
+            listed.add(row);
+        }
+
+        // Every listed session reports counts matching its own data.
+        for (Map<String, Object> row : listed) {
+            String id = (String) row.get("id");
+            long expectedPages = pageVisitRepository.findBySessionId(id).size();
+            long expectedSearches = searchQueryRepository.findBySessionId(id).size();
+            long expectedEvents = eventRepository.findBySessionId(id).size();
+            assertEquals(expectedPages, ((Number) row.get("pageCount")).longValue(), "pageCount for " + id);
+            assertEquals(expectedSearches, ((Number) row.get("searchCount")).longValue(), "searchCount for " + id);
+            assertEquals(expectedEvents, ((Number) row.get("eventCount")).longValue(), "eventCount for " + id);
+        }
     }
 
     @Test
