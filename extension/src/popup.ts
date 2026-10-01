@@ -1,6 +1,5 @@
 import { SessionState, BackendStatus } from './types';
 import { callServiceWorker, type SessionSummary } from './messages';
-import { SUPPORT_EMAIL } from './support';
 
 /** Fire-and-forget message to the service worker. */
 function sendMessage(type: string): Promise<void> {
@@ -22,9 +21,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const startBtn = document.getElementById('start-btn');
   const endBtn = document.getElementById('end-btn');
   const dashboardBtn = document.getElementById('dashboard-btn');
-  const reportBtn = document.getElementById('report-btn');
-  const reportNote = document.getElementById('report-note');
-  const supportEmail = document.getElementById('support-email');
 
   function applyView(sessionState: SessionState | null, storageReady: boolean, queueLength: number) {
     // Storage is local, so "connected" means the local store is ready rather
@@ -136,71 +132,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // package. No dev server, no local backend, nothing to install.
     chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/index.html') });
   });
-
-  /**
-   * Compose an issue report in Gmail.
-   *
-   * Opens Gmail's web compose page in a new tab with the report pre-filled,
-   * rather than a `mailto:` link that would launch whatever desktop mail
-   * client the user has (Outlook, Thunderbird, the OS handler). Nothing is
-   * sent by Pariet: the user lands in Gmail, can read and edit everything, and
-   * decides whether to send. The report is also copied to the clipboard as a
-   * fallback.
-   *
-   * The diagnostics attached are deliberately limited to how the extension is
-   * running. Browsing data is never included: no session titles, no URLs, no
-   * page titles, no search queries, and no counts that would reveal what was
-   * being researched. Only whether a session is running and whether the
-   * backend answered.
-   */
-  reportBtn?.addEventListener('click', () => {
-    chrome.storage.local.get(['sessionState', 'backendStatus'], (data) => {
-      const sessionState = data.sessionState as SessionState | undefined;
-      const backendStatus = data.backendStatus as BackendStatus | undefined;
-      const version = chrome.runtime.getManifest().version;
-
-      const diagnostics = [
-        `Extension version: ${version}`,
-        `Chrome: ${navigator.userAgent.replace(/^.*Chrome\/([\d.]+).*$/, '$1')}`,
-        `Session running: ${sessionState?.isActive ? 'yes' : 'no'}`,
-        `Backend reachable: ${backendStatus?.connected ? 'yes' : 'no'}`,
-        `Platform: ${navigator.platform || 'unknown'}`
-      ].join('\n');
-
-      const body = [
-        'What happened:',
-        '',
-        '(Describe the problem and, if useful, the steps to reproduce it.)',
-        '',
-        '---',
-        'Diagnostics (no browsing data is included):',
-        diagnostics
-      ].join('\n');
-
-      // Gmail's compose endpoint, opened in a new tab.
-      const composeUrl =
-        'https://mail.google.com/mail/?view=cm&fs=1' +
-        `&to=${encodeURIComponent(SUPPORT_EMAIL)}` +
-        `&su=${encodeURIComponent(`Pariet ${version} - bug report`)}` +
-        `&body=${encodeURIComponent(body)}`;
-
-      // Copy the report too, so it survives being closed or blocked.
-      navigator.clipboard?.writeText(body).catch(() => { /* clipboard is optional */ });
-      chrome.tabs.create({ url: composeUrl });
-
-      if (reportNote) {
-        reportNote.textContent = 'Report copied to your clipboard. Gmail should open in a new tab.';
-        reportNote.classList.remove('meta--hidden');
-      }
-    });
-  });
-
-  if (supportEmail) {
-    supportEmail.textContent = SUPPORT_EMAIL;
-    supportEmail.addEventListener('click', () => {
-      navigator.clipboard?.writeText(SUPPORT_EMAIL).catch(() => { /* optional */ });
-    });
-  }
 
   updateUI();
   setInterval(updateUI, 5000);
