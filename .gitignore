@@ -1,9 +1,4 @@
-# Java build output (legacy backend, removed)
-backend/target/
-
 # Local research data. Real browsing history: never commit it.
-# backend/data/ is the legacy SQLite store from the removed server backend.
-backend/data/
 data-export/
 
 # Node dependencies
