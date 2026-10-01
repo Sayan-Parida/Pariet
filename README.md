@@ -4,8 +4,6 @@ A browser extension that remembers your research trail, so you can pick up where
 
 It records the pages you visit and searches you run while a session is open, then draws them as a map showing how you got from one to the next — and where you stopped.
 
-<!-- Add a screenshot of the Research Map here. This is the first thing people see. -->
-
 ## Setup
 
 ### 1. Prerequisites
