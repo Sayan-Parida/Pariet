@@ -90,6 +90,10 @@ frontend/    dashboard source (built into the extension)
 
 Bug reports and pull requests are welcome. Open an issue on [GitHub](https://github.com/Sayan-Parida/Pariet/issues). If something looks wrong, a screenshot helps a lot.
 
+## License
+
+MIT — see [LICENSE](LICENSE).
+
 ## Note
 
 Pariet is Chrome-only for now. Firefox does not support the Manifest V3 background service worker this extension relies on.
