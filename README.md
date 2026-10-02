@@ -6,12 +6,27 @@ It records the pages you visit and searches you run while a session is open, the
 
 ## Setup
 
-### 1. Prerequisites
+### Option A — install the zip (no Node.js needed)
+
+Grab `pariet-<version>.zip`, unpack it into a folder you won't delete (Chrome loads from that folder, so moving or deleting it breaks the install), then:
+
+1. Go to `chrome://extensions`
+2. Turn on **Developer mode** (top right)
+3. Click **Load unpacked**
+4. Pick the folder you unpacked
+
+Chrome will keep pointing at that folder, so don't move it later. To update, unpack the newer zip and click the reload arrow on the extension card.
+
+### Option B — build from source
+
+If you want to read the code, change it, or build a specific commit.
+
+#### 1. Prerequisites
 
 - Node.js 18 or newer
 - Chrome or Edge
 
-### 2. Build it
+#### 2. Build it
 
 ```bash
 git clone https://github.com/Sayan-Parida/Pariet.git
@@ -22,7 +37,15 @@ npm run build
 
 This produces `extension/dist/`, which is the extension itself. There is no server to run and nothing to configure.
 
-### 3. Load it into your browser
+To produce a zip to hand to someone else:
+
+```bash
+npm run package
+```
+
+That builds and writes `pariet-<version>.zip` at the repo root.
+
+#### 3. Load it into your browser
 
 1. Go to `chrome://extensions`
 2. Turn on **Developer mode** (top right)
@@ -31,7 +54,7 @@ This produces `extension/dist/`, which is the extension itself. There is no serv
 
 Pariet now appears in your toolbar.
 
-### 4. Using it
+### Using it
 
 - Click the Pariet icon, type a topic if you like, and press **Start research**
 - Browse normally. Everything you visit is recorded locally, and only while a session is open
