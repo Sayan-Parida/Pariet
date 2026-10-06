@@ -28,9 +28,16 @@ manifest.background = { scripts: ['background.js'] };
 // upload and sends it back in the signed package. Keep this key, but never
 // commit a real ID here — a mismatched ID on a resubmission reads as a
 // different add-on.
+//
+// `data_collection_permissions` is required for all new AMO submissions
+// (since Nov 2025). Pariet stores everything in local IndexedDB and never
+// sends data off the machine, so `required: ["none"]` is the honest answer.
 manifest.browser_specific_settings = {
   gecko: {
     id: 'pariet@example.com',
+    data_collection_permissions: {
+      required: ['none']
+    },
     strict_min_version: '109.0'
   }
 };
@@ -40,3 +47,4 @@ writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 console.log('Firefox manifest written:');
 console.log(`  background.scripts: ${JSON.stringify(manifest.background.scripts)}`);
 console.log(`  gecko.id: ${manifest.browser_specific_settings.gecko.id}`);
+console.log(`  gecko.data_collection_permissions: ${JSON.stringify(manifest.browser_specific_settings.gecko.data_collection_permissions)}`);
