@@ -27,8 +27,10 @@ If you want to read the code, change it, or build a specific commit.
 
 #### 1. Prerequisites
 
-- Node.js 18 or newer
-- Chrome, Edge, or Firefox
+- **Node.js 18 or newer** — tested with Node 24 and npm 11. Install from [nodejs.org](https://nodejs.org) or with [nvm](https://github.com/nvm-sh/nvm) (`nvm install 24`); npm ships with Node, so there is nothing else to install.
+- **Any OS** — Windows, macOS, or Linux. The build is pure Node.js: no system packages, compilers, or services.
+- Chrome, Edge, or Firefox (to run the result)
+- Only if you zip the result on macOS/Linux: the `zip` command (`brew install zip` or your package manager). Building itself never needs it — Windows zipping uses the built-in `tar.exe`.
 
 #### 2. Build it
 
@@ -58,6 +60,26 @@ Both write at the repo root. The Firefox build rewrites `dist/manifest.json` for
 4. Pick the `extension/dist` folder
 
 Pariet now appears in your toolbar.
+
+#### Reproducing a release build (for add-on reviewers)
+
+Store packages are the output of these commands run at a specific commit (the commit is named in the submission's reviewer notes):
+
+```bash
+git clone https://github.com/Sayan-Parida/Pariet.git
+cd Pariet
+git checkout <commit>
+npm ci
+npm run build
+node scripts/firefox-manifest.mjs   # Firefox only; skip for the Chrome build
+```
+
+- `npm ci` installs the exact dependency versions pinned in `package-lock.json`.
+- `npm run build` **is the build script**: it runs the dashboard build (Vite, `frontend/`) and the extension build (webpack, `extension/`), which together generate everything in `extension/dist/`.
+- The last step rewrites `extension/dist/manifest.json` for Firefox (`background.scripts`, the `browser_specific_settings.gecko` block, and `data_collection_permissions`).
+- `npm run package:firefox` runs all three steps and produces `pariet-<version>-firefox.zip` in one command; `npm run package` does the same for Chrome without the manifest rewrite.
+
+Only files tracked in git are source. `extension/dist/`, `extension/dashboard/`, `node_modules/`, and `*.zip` are git-ignored build output and are never part of a source archive.
 
 ### Using it
 
