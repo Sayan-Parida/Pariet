@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { 
-  Compass, 
   MapPinned
 } from 'lucide-react';
 import Navbar from './components/Navbar';
@@ -207,13 +206,11 @@ const [isSearchOpen, setIsSearchOpen] = useState(false);
           {!selectedSessionId ? (
             /* Welcome State */
             <div className="h-full flex flex-col items-center justify-center p-6 text-center max-w-lg mx-auto space-y-5">
-              <div 
-                className="relative w-14 h-14 flex items-center justify-center border-2 border-[var(--border-strong)] shadow-[4px_4px_0_var(--shadow-ink)]"
-                style={{ backgroundColor: 'var(--accent)' }}
-              >
-                <Compass className="w-6 h-6 text-[var(--surface-base)]" />
-                <span className="absolute -top-2 -right-2 w-3.5 h-3.5 bg-[var(--accent-yellow)] border-2 border-[var(--border-strong)]" />
-              </div>
+              <img
+                src="./pariet-logo.png"
+                alt="Pariet logo"
+                className="w-14 h-14 object-contain"
+              />
 
               <div>
                 <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--text-primary)]">
