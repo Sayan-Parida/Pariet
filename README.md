@@ -19,7 +19,7 @@ Both browsers install from the same codebase. There are no servers to run and no
 
 Chrome will keep pointing at that folder, so don't move it later. To update, unpack the newer zip and click the reload arrow on the extension card. Chrome also nags about developer-mode extensions on every restart — one dismiss and it works normally.
 
-**Firefox:** grab `pariet-<version>-firefox.zip` and upload it at [addons.mozilla.org](https://addons.mozilla.org/developers/addon/submit/distribution) for a signed install, or load it temporarily for testing via `about:debugging` → This Firefox → Load Temporary Add-on. Note that temporary add-ons are removed when Firefox closes; the signed AMO install persists.
+**Firefox:** Pariet has been submitted to [Firefox Add-ons](https://addons.mozilla.org/firefox/) and is currently under review — once approved, it installs straight from the store listing with no zip needed. Until then, load `pariet-<version>-firefox.zip` temporarily via `about:debugging` → This Firefox → Load Temporary Add-on. Note that temporary add-ons are removed when Firefox closes; the signed AMO install persists.
 
 ### Option B — build from source
 
@@ -147,7 +147,7 @@ MIT — see [LICENSE](LICENSE).
 Pariet works in **Chrome** (and other Chromium browsers like Edge) and **Firefox**.
 
 - **Chrome/Edge** — Manifest V3 with a background service worker. Unzip `pariet-<version>.zip`, open `chrome://extensions`, turn on Developer mode, and use **Load unpacked**.
-- **Firefox** — same code, packaged with `background.scripts` plus the required `browser_specific_settings.gecko` block (added automatically by `npm run package:firefox`, which writes `pariet-<version>-firefox.zip`). Upload that file at [addons.mozilla.org](https://addons.mozilla.org/developers/addon/submit/distribution), or load it temporarily via `about:debugging` → This Firefox → Load Temporary Add-on.
+- **Firefox** — same code, packaged with `background.scripts` plus the required `browser_specific_settings.gecko` block (added automatically by `npm run package:firefox`, which writes `pariet-<version>-firefox.zip`). Submitted to Firefox Add-ons and under review; until it is approved, load it temporarily via `about:debugging` → This Firefox → Load Temporary Add-on.
 
 The code makes no browser-specific assumptions: every API Pariet uses (`runtime`, `tabs`, `webNavigation`, `windows`, `storage`, IndexedDB) works in both.
 
