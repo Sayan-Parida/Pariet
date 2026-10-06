@@ -567,7 +567,7 @@ function InnerMindMap({ sessionId, session, focusNodeId, onFocusNodeConsumed }: 
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(rawDataRef.current, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `researchmind-graph-${sessionId}.json`);
+    downloadAnchor.setAttribute('download', `pariet-graph-${sessionId}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
