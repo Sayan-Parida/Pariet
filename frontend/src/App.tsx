@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { 
   Compass, 
-  ArrowRight,
   MapPinned
 } from 'lucide-react';
 import Navbar from './components/Navbar';
@@ -218,39 +217,11 @@ const [isSearchOpen, setIsSearchOpen] = useState(false);
 
               <div>
                 <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--text-primary)]">
-                  Pariet — Research Mind
+                  Pariet
                 </h1>
                 <p className="text-xs font-mono text-[var(--text-secondary)] tracking-wide">
-                  Interactive knowledge graph workspace for deep literature exploration.
+                  Interactive knowledge graph workspace.
                 </p>
-              </div>
-
-              <div className="w-full pt-1 border-t-2 border-dashed border-[var(--border-medium)]">
-                <div className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-[var(--text-faint)] mb-2 text-left">
-                  Recent sessions
-                </div>
-                <div className="w-full space-y-2">
-                  {sessions.slice(0, 4).map((s, i) => (
-                    <button
-                      key={s.id}
-                      onClick={() => setSelectedSessionId(s.id)}
-                      className="group w-full border-2 border-[var(--border-subtle)] bg-[var(--surface-base)] rounded-[var(--radius-sm)] text-left transition-all hover:border-[var(--border-strong)] hover:shadow-[3px_3px_0_var(--shadow-ink)] hover:-translate-x-[1px] hover:-translate-y-[1px] flex items-center justify-between gap-3 p-2.5"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="b-stamp">{String(i + 1).padStart(2, '0')}</span>
-                        <div className="min-w-0 text-left">
-                          <div className="font-display text-[13px] font-bold text-[var(--text-primary)] truncate">
-                            {s.title}
-                          </div>
-                          <div className="font-mono text-[10px] font-bold text-[var(--text-muted)]">
-                            P {s.pageCount} • {s.status}
-                          </div>
-                        </div>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-[var(--text-faint)] group-hover:text-[var(--text-primary)] shrink-0" />
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           ) : (
