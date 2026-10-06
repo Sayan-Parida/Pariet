@@ -6,11 +6,16 @@
  * built files at the top level: your friend unzips it, gets a folder, and loads
  * that. No Node.js or npm needed on their side.
  *
- *   npm run package
+ *   npm run package            -> pariet-<version>.zip (Chrome)
+ *   npm run package:firefox    -> pariet-<version>-firefox.zip (Firefox/AMO)
  *
- * Writes pariet-<version>.zip at the repo root, where .gitignore already keeps
- * *.zip out of git. The version comes from extension/manifest.json so the zip can
- * never disagree with the build.
+ * Writes at the repo root, where .gitignore already keeps *.zip out of git.
+ * The version comes from extension/manifest.json so the zip can never disagree
+ * with the build.
+ *
+ * The Firefox zip rewrites dist/manifest.json first (see firefox-manifest.mjs),
+ * so package the Chrome zip before the Firefox one if you run both — or just
+ * rebuild in between. `npm run package` never touches the manifest.
  */
 import { readFileSync, existsSync, rmSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -27,8 +32,11 @@ if (!existsSync(join(distDir, 'manifest.json'))) {
   process.exit(1);
 }
 
+const target = process.argv[2] === 'firefox' ? 'firefox' : 'chrome';
+
 const { version } = JSON.parse(readFileSync(join(root, 'extension', 'manifest.json'), 'utf8'));
-const zipPath = join(root, `pariet-${version}.zip`);
+const zipName = target === 'firefox' ? `pariet-${version}-firefox.zip` : `pariet-${version}.zip`;
+const zipPath = join(root, zipName);
 
 // Rebuild from scratch every time so a deleted file cannot survive in the zip.
 if (existsSync(zipPath)) rmSync(zipPath);
@@ -60,6 +68,11 @@ if (windows) {
 console.log(`Packaged ${entries.length} files`);
 console.log(`  -> ${zipPath}`);
 console.log('');
-console.log('To install: unzip it somewhere permanent, then in Chrome go to');
-console.log('chrome://extensions, turn on Developer mode, and click Load unpacked');
-console.log('picking the folder you unzipped.');
+if (target === 'firefox') {
+  console.log('Upload this file at https://addons.mozilla.org/developers/addon/submit/distribution');
+  console.log('AMO signs it and either lists it or returns a signed copy for self-distribution.');
+} else {
+  console.log('To install: unzip it somewhere permanent, then in Chrome go to');
+  console.log('chrome://extensions, turn on Developer mode, and click Load unpacked');
+  console.log('picking the folder you unzipped.');
+}
