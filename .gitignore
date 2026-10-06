@@ -1,7 +1,6 @@
 # Local research data. Real browsing history: never commit it.
 data-export/
 
-# Node dependencies
 **/node_modules/
 frontend/node_modules/
 extension/node_modules/
@@ -15,7 +14,7 @@ extension/dist/
 # The dashboard is built into the extension, so this is build output too
 extension/dashboard/
 
-# Chrome Web Store upload package
+# Extension packages for Chrome/Edge and Firefox (AMO)
 *.zip
 
 # TypeScript incremental build state
@@ -45,7 +44,4 @@ secrets*.json
 
 # Local logs
 *.log
-# Local Puppeteer browser profile
-.puppeteer-chrome-profile/
 
-.puppeteer-test-profile/

@@ -13,8 +13,5 @@
     "package:firefox": "npm run build && node scripts/firefox-manifest.mjs && node scripts/package-extension.mjs firefox",
     "dev:dashboard": "npm --workspace frontend run dev",
     "dev:extension": "npm --workspace extension run dev"
-  },
-  "dependencies": {
-    "puppeteer-core": "^25.11.0"
   }
 }

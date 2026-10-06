@@ -6,16 +6,20 @@ It records the pages you visit and searches you run while a session is open, the
 
 ## Setup
 
+Both browsers install from the same codebase. There are no servers to run and nothing to configure.
+
 ### Option A — install the zip (no Node.js needed)
 
-Grab `pariet-<version>.zip`, unpack it into a folder you won't delete (Chrome loads from that folder, so moving or deleting it breaks the install), then:
+**Chrome/Edge:** grab `pariet-<version>.zip`, unpack it into a folder you won't delete (Chrome loads from that folder, so moving or deleting it breaks the install), then:
 
 1. Go to `chrome://extensions`
 2. Turn on **Developer mode** (top right)
 3. Click **Load unpacked**
 4. Pick the folder you unpacked
 
-Chrome will keep pointing at that folder, so don't move it later. To update, unpack the newer zip and click the reload arrow on the extension card.
+Chrome will keep pointing at that folder, so don't move it later. To update, unpack the newer zip and click the reload arrow on the extension card. Chrome also nags about developer-mode extensions on every restart — one dismiss and it works normally.
+
+**Firefox:** grab `pariet-<version>-firefox.zip` and upload it at [addons.mozilla.org](https://addons.mozilla.org/developers/addon/submit/distribution) for a signed install, or load it temporarily for testing via `about:debugging` → This Firefox → Load Temporary Add-on. Note that temporary add-ons are removed when Firefox closes; the signed AMO install persists.
 
 ### Option B — build from source
 
@@ -24,7 +28,7 @@ If you want to read the code, change it, or build a specific commit.
 #### 1. Prerequisites
 
 - Node.js 18 or newer
-- Chrome or Edge
+- Chrome, Edge, or Firefox
 
 #### 2. Build it
 
@@ -40,10 +44,11 @@ This produces `extension/dist/`, which is the extension itself. There is no serv
 To produce a zip to hand to someone else:
 
 ```bash
-npm run package
+npm run package            # Chrome/Edge -> pariet-<version>.zip
+npm run package:firefox    # Firefox     -> pariet-<version>-firefox.zip
 ```
 
-That builds and writes `pariet-<version>.zip` at the repo root.
+Both write at the repo root. The Firefox build rewrites `dist/manifest.json` for AMO, so package the Chrome zip first if you run both — or just rebuild in between. `npm run package` never touches the manifest.
 
 #### 3. Load it into your browser
 
@@ -115,6 +120,15 @@ Bug reports and pull requests are welcome. Open an issue on [GitHub](https://git
 
 MIT — see [LICENSE](LICENSE).
 
+## Browser support
+
+Pariet works in **Chrome** (and other Chromium browsers like Edge) and **Firefox**.
+
+- **Chrome/Edge** — Manifest V3 with a background service worker. Unzip `pariet-<version>.zip`, open `chrome://extensions`, turn on Developer mode, and use **Load unpacked**.
+- **Firefox** — same code, packaged with `background.scripts` plus the required `browser_specific_settings.gecko` block (added automatically by `npm run package:firefox`, which writes `pariet-<version>-firefox.zip`). Upload that file at [addons.mozilla.org](https://addons.mozilla.org/developers/addon/submit/distribution), or load it temporarily via `about:debugging` → This Firefox → Load Temporary Add-on.
+
+The code makes no browser-specific assumptions: every API Pariet uses (`runtime`, `tabs`, `webNavigation`, `windows`, `storage`, IndexedDB) works in both.
+
 ## Note
 
-Pariet is Chrome-only for now. Firefox does not support the Manifest V3 background service worker this extension relies on.
+Safari is not supported: it cannot load an unpacked extension from a zip, and distributing there requires Xcode plus an Apple Developer account.
