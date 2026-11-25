@@ -151,6 +151,25 @@ frontend/    dashboard source (built into the extension)
 
 ## Contributing
 
+### Testing changes
+
+Run `npm test` from the repository root for the recording, deletion, URL
+redaction, migration, and map regression tests.
+
+For a real Firefox smoke test, build with `npm run package:firefox`, download
+[Mozilla's geckodriver](https://github.com/mozilla/geckodriver/releases), and run:
+
+```powershell
+node tests/firefox-smoke.cjs <path-to-geckodriver.exe> pariet-0.1.0-firefox.zip
+```
+
+The smoke test uses the installed Windows Firefox, a disposable headless
+profile, and synthetic pages served on loopback. It tests the popup, rendered
+map, URL redaction, other-window/private-browsing isolation, tab restoration,
+session deletion, blocked database deletion, and upgrade cleanup. It does not
+touch your normal Firefox profile. A JSON report and dashboard screenshot are
+written next to the package.
+
 Bug reports and pull requests are welcome. Open an issue on [GitHub](https://github.com/Sayan-Parida/Pariet/issues). If something looks wrong, a screenshot helps a lot.
 
 ## License

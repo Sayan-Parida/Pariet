@@ -35,6 +35,7 @@ const { ingestEvent } = require('../extension/src/store/ingest.ts');
 const { exclusive } = require('../extension/src/operations.ts');
 const { isTrustedMessage } = require('../extension/src/validateMessage.ts');
 const { redactUrl } = require('../extension/src/store/privacy.ts');
+const { buildResearchMapProjection } = require('../frontend/src/utils/researchMapViewModel.ts');
 const sender = { id: chrome.runtime.id, url: chrome.runtime.getURL('dashboard/index.html'), tab: { id: 99 } };
 const message = (request, from = sender) => new Promise(resolve => listeners.message(request, from, resolve));
 const records = store => db.withTx(store, 'readonly', tx => db.req(tx.objectStore(store).getAll()));
@@ -58,6 +59,15 @@ async function navigate(id) {
 test('security regressions', async t => {
   require('../extension/src/background.ts');
   await exclusive(async () => {});
+
+  await t.test('research pages without navigation edges remain visible on the map', () => {
+    const graph = buildResearchMapProjection([
+      { id: 'session:s', type: 'SESSION', label: 'Research' },
+      { id: 'page', type: 'PAGE', label: 'Directly opened page', url: 'https://example.org/' }
+    ], [{ source: 'session:s', target: 'page', relationship: 'CONTAINS' }]);
+    assert.deepEqual(graph.nodes.map(node => node.id), ['session:s', 'page']);
+    assert.deepEqual(graph.edges, []);
+  });
 
   await t.test('excluded windows, unknown windows, pre-existing and incognito tabs leave no records', async () => {
     const session = await setup();
