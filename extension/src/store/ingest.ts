@@ -19,11 +19,12 @@
  * worker's attribution step, which is the single place that rule lives.
  */
 
-import { req, withTx, STORE_EVENTS, STORE_PAGES, STORE_SEARCHES } from './db';
-import type { StoredEvent, StoredPageVisit, StoredSearchQuery } from './records';
+import { req, withTx, STORE_SESSIONS, STORE_EVENTS, STORE_PAGES, STORE_SEARCHES } from './db';
+import type { StoredEvent, StoredPageVisit, StoredSearchQuery, StoredSession } from './records';
 import { detectSearch } from './searchDetect';
 import { normalize } from './text';
 import { isResearchUrl } from './urls';
+import { redactUrl, redactUrlInTitle } from './privacy';
 
 function pageKey(sessionId: string, url: string): string {
   return `${sessionId}:${url}`;
@@ -53,10 +54,22 @@ export class DuplicateEventError extends Error {
  * Runs in a single transaction so a failure leaves no partial records.
  */
 export async function ingestEvent(event: Omit<StoredEvent, 'id'>): Promise<StoredEvent> {
+  if (!event.sessionId) throw new Error('An active session is required');
+  const url = redactUrl(event.url);
+  event = {
+    ...event,
+    url,
+    title: redactUrlInTitle(event.title, event.url, url),
+    referrerUrl: redactUrl(event.referrerUrl)
+  };
   return withTx<StoredEvent>(
-    [STORE_EVENTS, STORE_PAGES, STORE_SEARCHES],
+    [STORE_SESSIONS, STORE_EVENTS, STORE_PAGES, STORE_SEARCHES],
     'readwrite',
     async (tx) => {
+      const session = await req(tx.objectStore(STORE_SESSIONS).get(event.sessionId!)) as StoredSession | undefined;
+      if (!session || session.status !== 'ACTIVE' || session.windowId == null || session.windowId !== event.windowId) {
+        throw new Error('Event does not belong to an active research window');
+      }
       const events = tx.objectStore(STORE_EVENTS);
       const pages = tx.objectStore(STORE_PAGES);
       const searches = tx.objectStore(STORE_SEARCHES);

@@ -155,10 +155,11 @@ const [isSearchOpen, setIsSearchOpen] = useState(false);
         )}
 
         {selectedSessionId && headerSession && (
-          <section className="shrink-0 relative bg-[var(--surface-base)] px-4 lg:px-6 py-2 border-b-2 border-[var(--border-strong)]">
-            <div className="flex items-center gap-3 min-h-[44px]">
+          <section className="session-summary shrink-0 relative bg-[var(--surface-base)] px-4 lg:px-6 py-2 border-b-2 border-[var(--border-strong)]">
+            <div className="session-summary-layout">
+              <div className="session-summary-overview">
               {/* Left: Research session badge + status (session name lives in the top breadcrumb) */}
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap min-w-0 items-center gap-2">
                 <span className="b-tag b-tag--accent">
                   <MapPinned className="w-2.5 h-2.5" />
                   Research session
@@ -173,8 +174,8 @@ const [isSearchOpen, setIsSearchOpen] = useState(false);
                 </span>
               </div>
 
-              {/* Center: compact single-line session stats */}
-              <div className="mx-auto flex items-center gap-1.5">
+              {/* Session stats wrap when space beside the resume card is limited. */}
+              <div className="session-summary-stats">
                 <div className="flex items-center gap-1.5 border-2 border-[var(--accent)] bg-[var(--accent-subtle)] rounded-[var(--radius-sm)] px-2 py-1">
                   <span className="font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--text-muted)]">Started</span>
                   <span className="font-mono text-[11px] font-bold text-[var(--text-primary)] min-w-[5.5rem]">{formatSessionDate(headerSession.startTime)}</span>
@@ -192,9 +193,10 @@ const [isSearchOpen, setIsSearchOpen] = useState(false);
                   <span className="font-mono text-[11px] font-bold text-[var(--text-primary)] min-w-[0.75rem]">{headerSession.pageCount}</span>
                 </div>
               </div>
+              </div>
 
               {/* Right: compact Resume Research card */}
-              <div className="hidden shrink-0 lg:block">
+              <div className="session-summary-resume">
                 <ResumePanel sessionId={headerSession.id} onViewPath={handleViewPath} />
               </div>
             </div>

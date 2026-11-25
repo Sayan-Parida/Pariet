@@ -27,7 +27,7 @@ If you want to read the code, change it, or build a specific commit.
 
 #### 1. Prerequisites
 
-- **Node.js 18 or newer** — tested with Node 24 and npm 11. Install from [nodejs.org](https://nodejs.org) or with [nvm](https://github.com/nvm-sh/nvm) (`nvm install 24`); npm ships with Node, so there is nothing else to install.
+- **Node.js 20.9 or newer** — Node 24 is recommended. Install from [nodejs.org](https://nodejs.org) or with [nvm](https://github.com/nvm-sh/nvm) (`nvm install 24`); npm ships with Node, so there is nothing else to install.
 - **Any OS** — Windows, macOS, or Linux. The build is pure Node.js: no system packages, compilers, or services.
 - Chrome, Edge, or Firefox (to run the result)
 - Only if you zip the result on macOS/Linux: the `zip` command (`brew install zip` or your package manager). Building itself never needs it — Windows zipping uses the built-in `tar.exe`.
@@ -112,6 +112,21 @@ What it never records: incognito tabs, browser-internal pages, page content, for
 
 To erase everything, use the trash icon in the sidebar.
 
+Research history stays until you delete it; Pariet does not automatically expire
+your sessions. You can delete individual sessions or erase all local data.
+
+Before saving URLs, Pariet removes embedded usernames/passwords, URL fragments,
+and known authentication or signing parameters (including OAuth codes/tokens,
+API keys, and common signed-link credentials). Ordinary research queries are
+kept. Existing local records are cleaned on upgrade, including URL-based page
+IDs and saved map positions. Links that depend on a removed fragment or token
+may no longer restore the exact page or work without signing in again.
+
+This reduces accidental retention of URL credentials; it cannot identify every
+secret in an arbitrary path, page title, or search term. Local storage is not
+a password vault: someone with access to your browser profile may be able to
+read your research history.
+
 ## How it works
 
 ```
@@ -135,6 +150,25 @@ frontend/    dashboard source (built into the extension)
 ```
 
 ## Contributing
+
+### Testing changes
+
+Run `npm test` from the repository root for the recording, deletion, URL
+redaction, migration, and map regression tests.
+
+For a real Firefox smoke test, build with `npm run package:firefox`, download
+[Mozilla's geckodriver](https://github.com/mozilla/geckodriver/releases), and run:
+
+```powershell
+node tests/firefox-smoke.cjs <path-to-geckodriver.exe> pariet-0.1.0-firefox.zip
+```
+
+The smoke test uses the installed Windows Firefox, a disposable headless
+profile, and synthetic pages served on loopback. It tests the popup, rendered
+map, URL redaction, other-window/private-browsing isolation, tab restoration,
+session deletion, blocked database deletion, and upgrade cleanup. It does not
+touch your normal Firefox profile. A JSON report and dashboard screenshot are
+written next to the package.
 
 Bug reports and pull requests are welcome. Open an issue on [GitHub](https://github.com/Sayan-Parida/Pariet/issues). If something looks wrong, a screenshot helps a lot.
 

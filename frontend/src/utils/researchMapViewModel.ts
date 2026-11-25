@@ -237,14 +237,10 @@ export function buildResearchMapProjection(
     if (node) node.isStoppingPoint = true;
   }
 
-  const connectedIds = new Set<string>();
-  for (const e of projectedEdges) {
-    connectedIds.add(e.source);
-    connectedIds.add(e.target);
-  }
-
   return {
-    nodes: projectedNodes.filter(n => n.type === 'SESSION' || connectedIds.has(n.id)),
+    // A page opened directly may have no navigation/search edge. It is still
+    // real research activity and must remain visible without inventing links.
+    nodes: projectedNodes,
     edges: projectedEdges
   };
 }

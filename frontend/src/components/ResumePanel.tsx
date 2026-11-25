@@ -93,7 +93,7 @@ export default function ResumePanel({ sessionId, onViewPath }: Props) {
   const restoring = status.kind === 'restoring';
 
   return (
-    <div className="b-panel w-[24rem] px-2.5 py-1.5 text-left min-h-[124px] flex flex-col">
+    <div className="resume-panel b-panel w-full min-w-0 px-2.5 py-1.5 text-left min-h-[124px] flex flex-col">
       <div className="min-w-0">
         {page ? (
           <>
@@ -125,11 +125,11 @@ export default function ResumePanel({ sessionId, onViewPath }: Props) {
         )}
       </div>
 
-      <div className="mt-1 flex gap-1.5">
+      <div className="resume-panel-actions mt-1 flex flex-wrap gap-1.5">
         <button
           onClick={handleRestore}
           disabled={!page || restoring || pagesReady === 0}
-          className="b-btn b-btn--accent shrink-0 text-[9px] px-1.5 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="b-btn b-btn--accent disabled:cursor-not-allowed disabled:opacity-50"
           title="Open your research pages as tabs, and jump back to your stopping point"
         >
           <History className="w-3 h-3 shrink-0" />
@@ -140,7 +140,7 @@ export default function ResumePanel({ sessionId, onViewPath }: Props) {
         <button
           onClick={() => page && onViewPath(page.id)}
           disabled={!page}
-          className="b-btn shrink-0 text-[9px] px-1.5 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+          className="b-btn disabled:cursor-not-allowed disabled:opacity-50"
           title="Show this page on the Research Map"
         >
           <MapPinned className="w-3 h-3 shrink-0" />
@@ -148,7 +148,7 @@ export default function ResumePanel({ sessionId, onViewPath }: Props) {
         </button>
       </div>
 
-      <div className="mt-1 flex items-center gap-1.5 min-h-[27px]">
+      <div className="mt-1 flex flex-wrap min-w-0 items-center gap-1.5 min-h-[27px]">
         {search && (
           <span className="truncate rounded-[var(--radius-xs)] border-[1.5px] border-[var(--accent)] bg-[var(--accent-subtle)] px-1.5 py-px font-mono text-[9px] font-bold text-[var(--accent)]">
             &ldquo;{search.queryText}&rdquo;

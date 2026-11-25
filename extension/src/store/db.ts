@@ -16,8 +16,10 @@
  * aggregated tables.
  */
 
+import { migratePrivacy } from './privacyMigration';
+
 export const DB_NAME = 'pariet';
-export const DB_VERSION = 1;
+export const DB_VERSION = 3;
 
 export const STORE_SESSIONS = 'sessions';
 export const STORE_EVENTS = 'events';
@@ -26,9 +28,11 @@ export const STORE_SEARCHES = 'searchQueries';
 export const STORE_POSITIONS = 'positions';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+let deletionPending = false;
 
 /** Open (and if needed create or upgrade) the database. */
 export function openDb(): Promise<IDBDatabase> {
+  if (deletionPending) return Promise.reject(new Error('Data deletion is still pending; close other Pariet tabs and retry'));
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
@@ -36,10 +40,17 @@ export function openDb(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = request.result;
-      migrate(db, event.oldVersion);
+      migrate(db, event.oldVersion, request.transaction!);
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error('Pariet database upgrade blocked by another tab'));
   });
@@ -50,7 +61,7 @@ export function openDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-function migrate(db: IDBDatabase, oldVersion: number) {
+function migrate(db: IDBDatabase, oldVersion: number, tx: IDBTransaction) {
   // v1 - initial schema.
   if (oldVersion < 1) {
     const sessions = db.createObjectStore(STORE_SESSIONS, { keyPath: 'id' });
@@ -73,6 +84,9 @@ function migrate(db: IDBDatabase, oldVersion: number) {
     searches.createIndex('pageVisitId', 'pageVisitId');
 
     db.createObjectStore(STORE_POSITIONS, { keyPath: 'sessionId' });
+  }
+  if (oldVersion < 3) {
+    migratePrivacy(tx).catch(() => tx.abort());
   }
 }
 
@@ -120,6 +134,8 @@ export function req<T>(request: IDBRequest<T>): Promise<T> {
 
 /** Delete the whole database. Used by "delete all data". */
 export async function deleteDatabase(): Promise<void> {
+  if (deletionPending) throw new Error('Data deletion is still pending; close other Pariet tabs and retry');
+  deletionPending = true;
   if (dbPromise) {
     try {
       (await dbPromise).close();
@@ -130,8 +146,8 @@ export async function deleteDatabase(): Promise<void> {
   }
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DB_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => resolve();
+    request.onsuccess = () => { deletionPending = false; resolve(); };
+    request.onerror = () => { deletionPending = false; reject(request.error); };
+    request.onblocked = () => reject(new Error('Deletion blocked: close other Pariet tabs and retry'));
   });
 }
