@@ -164,7 +164,7 @@ For a real Firefox smoke test, build with `npm run package:firefox`, download
 [Mozilla's geckodriver](https://github.com/mozilla/geckodriver/releases), and run:
 
 ```powershell
-node tests/firefox-smoke.cjs <path-to-geckodriver.exe> pariet-0.1.0-firefox.zip
+node tests/firefox-smoke.cjs <path-to-geckodriver.exe> pariet-0.1.1-firefox.zip
 ```
 
 The smoke test uses the installed Windows Firefox, a disposable headless
