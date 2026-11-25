@@ -24,6 +24,7 @@ import type { StoredEvent, StoredPageVisit, StoredSearchQuery, StoredSession } f
 import { detectSearch } from './searchDetect';
 import { normalize } from './text';
 import { isResearchUrl } from './urls';
+import { redactUrl, redactUrlInTitle } from './privacy';
 
 function pageKey(sessionId: string, url: string): string {
   return `${sessionId}:${url}`;
@@ -54,6 +55,13 @@ export class DuplicateEventError extends Error {
  */
 export async function ingestEvent(event: Omit<StoredEvent, 'id'>): Promise<StoredEvent> {
   if (!event.sessionId) throw new Error('An active session is required');
+  const url = redactUrl(event.url);
+  event = {
+    ...event,
+    url,
+    title: redactUrlInTitle(event.title, event.url, url),
+    referrerUrl: redactUrl(event.referrerUrl)
+  };
   return withTx<StoredEvent>(
     [STORE_SESSIONS, STORE_EVENTS, STORE_PAGES, STORE_SEARCHES],
     'readwrite',

@@ -16,8 +16,10 @@
  * aggregated tables.
  */
 
+import { migratePrivacy } from './privacyMigration';
+
 export const DB_NAME = 'pariet';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export const STORE_SESSIONS = 'sessions';
 export const STORE_EVENTS = 'events';
@@ -83,22 +85,8 @@ function migrate(db: IDBDatabase, oldVersion: number, tx: IDBTransaction) {
 
     db.createObjectStore(STORE_POSITIONS, { keyPath: 'sessionId' });
   }
-  if (oldVersion < 2) {
-    // Earlier versions retained excluded events without a session. Remove
-    // those and any data left behind after deleting an active session.
-    const sessions = tx.objectStore(STORE_SESSIONS).getAllKeys();
-    sessions.onsuccess = () => {
-      const valid = new Set(sessions.result);
-      for (const name of [STORE_EVENTS, STORE_PAGES, STORE_SEARCHES, STORE_POSITIONS]) {
-        const cursor = tx.objectStore(name).openCursor();
-        cursor.onsuccess = () => {
-          const entry = cursor.result;
-          if (!entry) return;
-          if (!valid.has(entry.value.sessionId)) entry.delete();
-          entry.continue();
-        };
-      }
-    };
+  if (oldVersion < 3) {
+    migratePrivacy(tx).catch(() => tx.abort());
   }
 }
 

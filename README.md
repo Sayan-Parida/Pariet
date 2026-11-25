@@ -112,6 +112,21 @@ What it never records: incognito tabs, browser-internal pages, page content, for
 
 To erase everything, use the trash icon in the sidebar.
 
+Research history stays until you delete it; Pariet does not automatically expire
+your sessions. You can delete individual sessions or erase all local data.
+
+Before saving URLs, Pariet removes embedded usernames/passwords, URL fragments,
+and known authentication or signing parameters (including OAuth codes/tokens,
+API keys, and common signed-link credentials). Ordinary research queries are
+kept. Existing local records are cleaned on upgrade, including URL-based page
+IDs and saved map positions. Links that depend on a removed fragment or token
+may no longer restore the exact page or work without signing in again.
+
+This reduces accidental retention of URL credentials; it cannot identify every
+secret in an arbitrary path, page title, or search term. Local storage is not
+a password vault: someone with access to your browser profile may be able to
+read your research history.
+
 ## How it works
 
 ```

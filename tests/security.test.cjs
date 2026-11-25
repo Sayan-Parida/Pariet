@@ -34,6 +34,7 @@ const sessions = require('../extension/src/store/sessions.ts');
 const { ingestEvent } = require('../extension/src/store/ingest.ts');
 const { exclusive } = require('../extension/src/operations.ts');
 const { isTrustedMessage } = require('../extension/src/validateMessage.ts');
+const { redactUrl } = require('../extension/src/store/privacy.ts');
 const sender = { id: chrome.runtime.id, url: chrome.runtime.getURL('dashboard/index.html'), tab: { id: 99 } };
 const message = (request, from = sender) => new Promise(resolve => listeners.message(request, from, resolve));
 const records = store => db.withTx(store, 'readonly', tx => db.req(tx.objectStore(store).getAll()));
@@ -82,6 +83,35 @@ test('security regressions', async t => {
     await navigate(7);
     assert.deepEqual(state.preExistingTabIds, []);
     assert.equal((await sessions.getPages(session.id)).length, 1);
+  });
+
+  await t.test('URL credentials, signed parameters, fragments and nested redirects are redacted', () => {
+    for (const key of ['access_token', 'id_token', 'refresh-token', 'api_key', 'password', 'code', 'state', 'sessionId', 'X-Amz-Signature', 'X-Goog-Credential', 'AWSAccessKeyId', 'sig', 'SAMLResponse']) {
+      const result = redactUrl(`https://user:secret@example.org/p?q=research&${key}=TOPSECRET#fragmentsecret`);
+      assert.equal(result, 'https://example.org/p?q=research');
+      assert.equal(redactUrl(result), result);
+    }
+    const result = redactUrl('https://example.org/?redirect=' + encodeURIComponent('https://a:b@example.net/c?token=TOPSECRET&q=science#secret'));
+    assert.equal(new URL(result).searchParams.get('redirect'), 'https://example.net/c?q=science');
+    assert.equal(redactUrl('https://example.org/p?q=research&page=2&tag=a&tag=b'), 'https://example.org/p?q=research&page=2&tag=a&tag=b');
+    assert.equal(redactUrl('javascript:alert(1)'), null);
+  });
+
+  await t.test('ingestion redacts every URL copy, title echo and generated page key before writing', async () => {
+    const session = await setup();
+    const original = 'https://user:TOPSECRET@example.org/path?q=science&token=TOPSECRET#TOPSECRET';
+    const input = { eventType: 'NAVIGATION', url: original, referrerUrl: original, title: `Reading ${original}`,
+      tabId: 8, windowId: 1, timestamp: Date.now(), sessionId: session.id };
+    await ingestEvent(input);
+    assert.equal(input.url, original);
+    const snapshot = JSON.stringify(await Promise.all([records(db.STORE_EVENTS), records(db.STORE_PAGES)]));
+    assert.equal(snapshot.includes('TOPSECRET'), false);
+    assert.equal((await sessions.getPages(session.id))[0].url, 'https://example.org/path?q=science');
+    tabs.get(8).url = 'https://www.google.com/search?q=local+research&access_token=TOPSECRET';
+    await navigate(8);
+    const searches = await sessions.getSearches(session.id);
+    assert.equal(searches[0].queryText, 'local research');
+    assert.equal(JSON.stringify(searches).includes('TOPSECRET'), false);
   });
 
   await t.test('deleting active research stops capture and removes every record', async () => {
@@ -166,7 +196,7 @@ test('security regressions', async t => {
           const store = database.createObjectStore(name, { keyPath: 'id' });
           store.put({ id: 1, sessionId: null });
           store.put({ id: 2, sessionId: 'deleted' });
-          store.put({ id: 3, sessionId: 'valid' });
+          store.put({ id: 3, sessionId: 'valid', url: 'https://example.org/', sourceUrl: 'https://example.org/' });
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -175,8 +205,52 @@ test('security regressions', async t => {
     legacy.close();
     await db.openDb();
     for (const name of ['events', 'pageVisits', 'searchQueries', 'positions']) {
-      assert.deepEqual(await records(name), [{ id: 3, sessionId: 'valid' }]);
+      const result = await records(name);
+      assert.equal(result.length, 1);
+      assert.equal(result[0].sessionId, 'valid');
     }
+    await db.deleteDatabase();
+  });
+
+  await t.test('upgrade redacts old URL keys and layouts, merges pages and preserves graph links', async () => {
+    await db.deleteDatabase();
+    const oldUrls = ['https://example.org/p?token=TOPSECRET', 'https://example.org/p?token=ANOTHERSECRET'];
+    const ids = oldUrls.map(url => `valid:${url}`);
+    const legacy = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(db.DB_NAME, 2);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        database.createObjectStore('sessions', { keyPath: 'id' }).put({ id: 'valid', status: 'COMPLETED' });
+        const pages = database.createObjectStore('pageVisits', { keyPath: 'id' });
+        const events = database.createObjectStore('events', { keyPath: 'id', autoIncrement: true });
+        events.createIndex('dedup', ['tabId', 'url', 'timestamp'], { unique: true });
+        const searches = database.createObjectStore('searchQueries', { keyPath: 'id' });
+        const positions = database.createObjectStore('positions', { keyPath: 'sessionId' });
+        oldUrls.forEach((url, index) => {
+          pages.put({ id: ids[index], url, title: url, sessionId: 'valid', visitCount: 1, durationMs: 10,
+            firstVisited: index + 1, lastVisited: index + 2 });
+          events.put({ id: index + 1, sessionId: 'valid', url, title: url, referrerUrl: url, tabId: 8, timestamp: 1, pageVisitId: ids[index] });
+        });
+        searches.put({ id: 'search', sessionId: 'valid', sourceUrl: oldUrls[0], queryText: 'science', pageVisitId: ids[0] });
+        positions.put({ sessionId: 'valid', positions: { [ids[0]]: { x: 1, y: 2 } } });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    legacy.close();
+    await db.openDb();
+    const pages = await records(db.STORE_PAGES);
+    assert.equal(pages.length, 1);
+    assert.equal(pages[0].id, 'valid:https://example.org/p');
+    assert.equal(pages[0].visitCount, 2);
+    assert.equal(pages[0].durationMs, 20);
+    const events = await records(db.STORE_EVENTS);
+    assert.equal(events.length, 1); // redaction made the duplicate keys identical
+    assert.equal(events[0].pageVisitId, pages[0].id);
+    assert.equal((await records(db.STORE_SEARCHES))[0].pageVisitId, pages[0].id);
+    assert.deepEqual((await records(db.STORE_POSITIONS))[0].positions, { [pages[0].id]: { x: 1, y: 2 } });
+    const snapshot = JSON.stringify(await Promise.all(['events', 'pageVisits', 'searchQueries', 'positions'].map(records)));
+    assert.equal(snapshot.includes('SECRET'), false);
     await db.deleteDatabase();
   });
 });
