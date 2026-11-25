@@ -8,7 +8,7 @@ It records the pages you visit and searches you run while a session is open, the
 
 Both browsers install from the same codebase. There are no servers to run and nothing to configure.
 
-### Option A — install the zip (no Node.js needed)
+### Option A — install Pariet (no Node.js needed)
 
 **Chrome/Edge:** grab `pariet-<version>.zip`, unpack it into a folder you won't delete (Chrome loads from that folder, so moving or deleting it breaks the install), then:
 
@@ -19,7 +19,7 @@ Both browsers install from the same codebase. There are no servers to run and no
 
 Chrome will keep pointing at that folder, so don't move it later. To update, unpack the newer zip and click the reload arrow on the extension card. Chrome also nags about developer-mode extensions on every restart — one dismiss and it works normally.
 
-**Firefox:** Pariet has been submitted to [Firefox Add-ons](https://addons.mozilla.org/firefox/) and is currently under review — once approved, it installs straight from the store listing with no zip needed. Until then, load `pariet-<version>-firefox.zip` temporarily via `about:debugging` → This Firefox → Load Temporary Add-on. Note that temporary add-ons are removed when Firefox closes; the signed AMO install persists.
+**Firefox:** Install [Pariet from Firefox Add-ons](https://addons.mozilla.org/firefox/addon/pariet/) by clicking **Add to Firefox**. No zip, Node.js, or developer mode is needed. The signed add-on stays installed when Firefox restarts.
 
 ### Option B — build from source
 
@@ -54,10 +54,14 @@ Both write at the repo root. The Firefox build rewrites `dist/manifest.json` for
 
 #### 3. Load it into your browser
 
+**Chrome/Edge:**
+
 1. Go to `chrome://extensions`
 2. Turn on **Developer mode** (top right)
 3. Click **Load unpacked**
 4. Pick the `extension/dist` folder
+
+**Firefox (development builds):** Run `npm run package:firefox`, open `about:debugging` → **This Firefox** → **Load Temporary Add-on**, and select `extension/dist/manifest.json`. Temporary add-ons are removed when Firefox closes; use the [Firefox Add-ons listing](https://addons.mozilla.org/firefox/addon/pariet/) for a permanent installation.
 
 Pariet now appears in your toolbar.
 
@@ -181,7 +185,7 @@ MIT — see [LICENSE](LICENSE).
 Pariet works in **Chrome** (and other Chromium browsers like Edge) and **Firefox**.
 
 - **Chrome/Edge** — Manifest V3 with a background service worker. Unzip `pariet-<version>.zip`, open `chrome://extensions`, turn on Developer mode, and use **Load unpacked**.
-- **Firefox** — same code, packaged with `background.scripts` plus the required `browser_specific_settings.gecko` block (added automatically by `npm run package:firefox`, which writes `pariet-<version>-firefox.zip`). Submitted to Firefox Add-ons and under review; until it is approved, load it temporarily via `about:debugging` → This Firefox → Load Temporary Add-on.
+- **Firefox** — available on [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/pariet/). Install the signed add-on directly from the listing. For development and store submissions, `npm run package:firefox` builds the same code with `background.scripts` and the required `browser_specific_settings.gecko` block.
 
 The code makes no browser-specific assumptions: every API Pariet uses (`runtime`, `tabs`, `webNavigation`, `windows`, `storage`, IndexedDB) works in both.
 
