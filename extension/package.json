@@ -8,7 +8,7 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "@types/chrome": "^0.0.268",
+    "@types/chrome": "^0.3.7",
     "copy-webpack-plugin": "^14.0.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.4.5",
