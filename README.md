@@ -27,7 +27,7 @@ If you want to read the code, change it, or build a specific commit.
 
 #### 1. Prerequisites
 
-- **Node.js 18 or newer** — tested with Node 24 and npm 11. Install from [nodejs.org](https://nodejs.org) or with [nvm](https://github.com/nvm-sh/nvm) (`nvm install 24`); npm ships with Node, so there is nothing else to install.
+- **Node.js 20.9 or newer** — Node 24 is recommended. Install from [nodejs.org](https://nodejs.org) or with [nvm](https://github.com/nvm-sh/nvm) (`nvm install 24`); npm ships with Node, so there is nothing else to install.
 - **Any OS** — Windows, macOS, or Linux. The build is pure Node.js: no system packages, compilers, or services.
 - Chrome, Edge, or Firefox (to run the result)
 - Only if you zip the result on macOS/Linux: the `zip` command (`brew install zip` or your package manager). Building itself never needs it — Windows zipping uses the built-in `tar.exe`.

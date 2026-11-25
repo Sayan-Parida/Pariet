@@ -1,10 +1,12 @@
 import { BrowserEventRequest, SessionState } from './types';
 import { ingestEvent, DuplicateEventError } from './store/ingest';
-import { createSession, endSession, getSession, deleteSession, deleteAllData,
+import { createSession, endSession, deleteSession, deleteAllData,
          listSessions, getPositions, savePositions } from './store/sessions';
 import { getMindMap, getPageViews, getSearchViews, getTimeline, getResumePoint } from './store/api';
 import { isResearchUrl } from './store/urls';
 import type { ParietRequest, ParietResponse } from './messages';
+import { exclusive } from './operations';
+import { isTrustedMessage } from './validateMessage';
 
 // Session bookkeeping lives in chrome.storage.local because the service worker
 // needs it synchronously at event time. The research data itself lives in
@@ -23,7 +25,14 @@ async function initState() {
   }
 }
 
-initState();
+exclusive(initState).catch((error) => console.error('Could not initialize capture state', error));
+
+async function clearCaptureState() {
+  await chrome.storage.local.set({
+    sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
+    preExistingTabIds: []
+  });
+}
 
 /**
  * End the active session.
@@ -38,11 +47,8 @@ async function endActiveSession(reason: string, endedAtMs?: number): Promise<boo
   if (!sessionState?.isActive || !sessionState.sessionId) return true;
 
   try {
+    await clearCaptureState();
     await endSession(sessionState.sessionId, endedAtMs);
-    await chrome.storage.local.set({
-      sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
-      preExistingTabIds: []
-    });
     console.log(`Ended session ${sessionState.sessionId} (${reason})`);
     return true;
   } catch (error) {
@@ -68,7 +74,8 @@ async function reconcileLeftoverSession() {
 // session immediately. This covers closing the research window and quitting
 // Chrome, since quitting removes every window.
 chrome.windows.onRemoved.addListener((windowId) => {
-  chrome.storage.local.get(['sessionState']).then(async (data) => {
+  exclusive(async () => {
+    const data = await chrome.storage.local.get(['sessionState']);
     const sessionState: SessionState | undefined = data.sessionState;
     if (!sessionState?.isActive || sessionState.windowId == null) return;
     if (sessionState.windowId !== windowId) return;
@@ -76,12 +83,14 @@ chrome.windows.onRemoved.addListener((windowId) => {
   }).catch((e) => console.warn('Window close handler failed', e));
 });
 
-reconcileLeftoverSession().catch((e) => console.warn('Session reconcile failed', e));
+// A worker wake is not a browser restart. Only reconcile on browser startup.
+chrome.runtime.onStartup.addListener(() => {
+  exclusive(reconcileLeftoverSession).catch((e) => console.warn('Session reconcile failed', e));
+});
 
 // Window isolation rule: a Research Session belongs to the Chrome window
 // where it was started. Only events carrying that windowId may be
-// attributed to the session. A null window on either side (unknown /
-// legacy) falls back to the pre-existing tab rules below.
+// attributed to the session. Unknown windows are rejected.
 //
 // Moved-tab decision (deterministic, based on the event's authoritative
 // windowId at event time, never on tabId history):
@@ -91,21 +100,25 @@ reconcileLeftoverSession().catch((e) => console.warn('Session reconcile failed',
 //   windowId and are evaluated under the normal rules (an unknown tab id is
 //   treated like a newly created tab).
 function windowMatchesSession(sessionState: SessionState, event: BrowserEventRequest): boolean {
-  if (sessionState.windowId == null) return true;
-  if (event.windowId == null) return true;
+  if (sessionState.windowId == null || event.windowId == null) return false;
   return event.windowId === sessionState.windowId;
 }
 
 // Queue and processing
-async function processEvent(event: BrowserEventRequest) {
+function processEvent(event: BrowserEventRequest) {
+  return exclusive(() => recordEvent(event));
+}
+
+async function recordEvent(event: BrowserEventRequest) {
   const data = await chrome.storage.local.get(['sessionState', 'eventQueue', 'preExistingTabIds']);
-  const sessionState: SessionState = data.sessionState;
+  const sessionState: SessionState | undefined = data.sessionState;
   const preExistingTabIds: number[] = data.preExistingTabIds || [];
   
   // Determine if this event should be attributed to the active session
   let shouldAttributeSession = false;
   
-  if (sessionState.isActive && sessionState.sessionId && windowMatchesSession(sessionState, event)) {
+  if (sessionState?.isActive && sessionState.sessionId && windowMatchesSession(sessionState, event)
+      && event.timestamp >= (sessionState.startedAt ?? 0)) {
     const isPreExistingTab = preExistingTabIds.includes(event.tabId);
     
     if (!isPreExistingTab) {
@@ -127,7 +140,7 @@ async function processEvent(event: BrowserEventRequest) {
   // Capture is session-scoped: nothing is recorded while no Research Session
   // is active. Previously every tab event was sent unconditionally, which
   // stored a permanent record of all browsing activity even outside sessions.
-  if (!sessionState.isActive || !sessionState.sessionId) {
+  if (!shouldAttributeSession || !sessionState?.sessionId) {
     return;
   }
 
@@ -324,14 +337,14 @@ async function handleDashboardRequest(request: ParietRequest): Promise<unknown> 
     case 'GET_RESUME_POINT':
       return getResumePoint(request.sessionId);
     case 'DELETE_SESSION':
+      if ((await chrome.storage.local.get('sessionState')).sessionState?.sessionId === request.sessionId) {
+        await clearCaptureState();
+      }
       await deleteSession(request.sessionId);
       return null;
     case 'DELETE_ALL_DATA':
+      await clearCaptureState();
       await deleteAllData();
-      await chrome.storage.local.set({
-        sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
-        preExistingTabIds: []
-      });
       return null;
     case 'GET_POSITIONS':
       return getPositions(request.sessionId);
@@ -356,9 +369,13 @@ const DASHBOARD_REQUESTS = new Set<ParietRequest['type']>([
 
 // Messages from the popup and dashboard
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!isTrustedMessage(message, sender)) {
+    sendResponse({ ok: false, success: false, error: 'Invalid or untrusted request' });
+    return false;
+  }
   // Dashboard API. Checked first because its requests share the GET_ prefix.
   if (message && DASHBOARD_REQUESTS.has(message.type)) {
-    handleDashboardRequest(message as ParietRequest)
+    exclusive(() => handleDashboardRequest(message as ParietRequest))
       .then((data) => sendResponse({ ok: true, data } satisfies ParietResponse))
       .catch((error) => sendResponse({
         ok: false,
@@ -382,10 +399,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'START_SESSION') {
     // The session belongs to the currently focused window. Events from any
     // other window must never be attributed to it (see windowMatchesSession).
-    (async () => {
+    exclusive(async () => {
       const focusedWindow = await chrome.windows.getLastFocused().catch(() => null);
       const sessionWindowId: number | null =
         focusedWindow && focusedWindow.id != null ? focusedWindow.id : null;
+
+      if (sessionWindowId == null || focusedWindow?.incognito) {
+        throw new Error('Start research in a regular browser window');
+      }
+      if (!await endActiveSession('replaced by a new session')) {
+        throw new Error('Could not end the previous session');
+      }
 
       const session = await createSession(message.title ?? null, sessionWindowId);
 
@@ -408,21 +432,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         preExistingTabIds
       });
       sendResponse({ success: true, sessionId: session.id, preExistingTabCount: preExistingTabIds.length });
-    })().catch((error) => {
+    }).catch((error) => {
       console.error('Failed to start session', error);
       sendResponse({ success: false, error: error instanceof Error ? error.message : 'Failed to start session' });
     });
     return true;
   } else if (message.type === 'END_SESSION') {
-    endActiveSession('ended by user')
+    exclusive(() => endActiveSession('ended by user'))
       .then((ok) => sendResponse({ success: ok }))
       .catch(() => sendResponse({ success: false }));
     return true;
   } else if (message.type === 'CLEAR_SESSION_STATE') {
-    chrome.storage.local.set({
+    exclusive(() => chrome.storage.local.set({
       sessionState: { sessionId: null, sessionTitle: null, isActive: false, windowId: null } as SessionState,
       preExistingTabIds: []
-    }).then(() => sendResponse({ success: true }));
+    })).then(() => sendResponse({ success: true }));
     return true;
   }
 });
