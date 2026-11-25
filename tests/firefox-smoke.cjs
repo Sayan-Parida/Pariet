@@ -152,6 +152,35 @@ async function main() {
     }
     const ui = await execute('return document.body.innerText');
     assert.equal(/something went wrong|could not load|failed to load/i.test(ui), false);
+    const layoutChecks = [];
+    for (const width of [1024, 1280, 1366, 1600, 1920]) {
+      await api('POST', '/window/rect', { width, height: 900 });
+      for (const zoom of [1, 1.25, 1.5]) {
+        await api('POST', '/moz/context', { context: 'chrome' });
+        await execute('gBrowser.selectedBrowser.fullZoom=arguments[0];', zoom);
+        await api('POST', '/moz/context', { context: 'content' });
+        await pause(150);
+        const layout = await execute(`const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+          const section=document.querySelector('.session-summary'), panel=document.querySelector('.resume-panel');
+          const bounds=rect(section), card=rect(panel);
+          const buttons=[...panel.querySelectorAll('button')].map(rect);
+          const stats=[...document.querySelector('.session-summary-stats').children].map(rect);
+          const contained=(inner,outer)=>inner.left>=outer.left-1 && inner.right<=outer.right+1 && inner.top>=outer.top-1 && inner.bottom<=outer.bottom+1;
+          return {viewport:innerWidth,card,visible:card.width>0&&card.height>0,
+            cardContained:contained(card,bounds)&&card.right<=innerWidth+1,
+            buttonsContained:buttons.every(button=>contained(button,card)),
+            statsContained:stats.every(stat=>stat.width===0||contained(stat,bounds))};`);
+        assert.equal(layout.visible && layout.cardContained && layout.buttonsContained && layout.statsContained, true, JSON.stringify({width,zoom,...layout}));
+        layoutChecks.push({width,zoom,viewport:layout.viewport});
+        if ((width===1024 || width===1280 || width===1920) && zoom===1) {
+          fs.writeFileSync(path.join(path.dirname(archive), `firefox-layout-${width}.png`), Buffer.from(await api('GET','/screenshot'),'base64'));
+        }
+      }
+    }
+    await api('POST', '/moz/context', { context: 'chrome' });
+    await execute('gBrowser.selectedBrowser.fullZoom=1;');
+    await api('POST', '/moz/context', { context: 'content' });
+    passed('Resume panel, buttons and statistics fit at 5 screen widths and 3 zoom levels');
     await api('POST', '/window/rect', { width: 1365, height: 900 });
     const imagePath = path.join(path.dirname(archive), 'firefox-smoke-dashboard.png');
     fs.writeFileSync(imagePath, Buffer.from(await api('GET', '/screenshot'), 'base64'));
@@ -222,7 +251,7 @@ async function main() {
     assert.deepEqual(unwrap(await message({type:'LIST_SESSIONS'})), []);
     passed('Unblocked delete-all erases every store');
 
-    const report = { browserVersion: result.capabilities.browserVersion, addon, archiveSha256: crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex'), checks: checked, dashboardScreenshot: imagePath };
+    const report = { browserVersion: result.capabilities.browserVersion, addon, archiveSha256: crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex'), checks: checked, layoutChecks, dashboardScreenshot: imagePath };
     fs.writeFileSync(path.join(path.dirname(archive), 'firefox-smoke-report.json'), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report, null, 2));
   } catch (error) {

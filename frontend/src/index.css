@@ -250,6 +250,48 @@ button {
   background: var(--status-active-subtle);
 }
 
+/* Session summary adapts to available space beside the archive sidebar. */
+.session-summary-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.session-summary-overview {
+  display: flex;
+  flex: 1 1 32rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.session-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.session-summary-resume {
+  flex: 0 1 24rem;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+}
+.resume-panel .b-btn {
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 6px;
+  font-size: 11px;
+  white-space: normal;
+}
+.resume-panel .b-btn span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Brutal input */
 .b-input {
   display: flex;
